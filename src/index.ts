@@ -315,136 +315,167 @@ function updateSetting(ctx, userId, input, match) {
     }
 }
 
-// Function to download video by file_id
-async function downloadVideo(fileId) {
-    try {
-      // Get file information using getFile method
-      const file = await bot.telegram.getFile(fileId);
-  
-      // Construct the file URL
-      const fileUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
-  
-      // Download the file using a library like 'axios' or 'node-fetch'
-      const response = await axios.get(fileUrl, { responseType: 'stream' });
+// Store message IDs and chat IDs for progress bars
+const progressBars = {};
 
-      // Store the file in the following directory
-      var storagePath = path.join(__dirname, '..', 'video_store');
- 
-      // Create a writable stream and save the file locally
-      const filePath = `${storagePath}/${file.file_id}.mp4`;
-      const fileStream = fs.createWriteStream(filePath);
-      response.data.pipe(fileStream);
-  
-      // Return the local file path
-      return new Promise((resolve, reject) => {
-        fileStream.on('finish', () => resolve(filePath));
-        fileStream.on('error', reject);
-      });
+// Function to download video by file_id with progress bar
+async function downloadVideo(fileId, chatId, progressCallback) {
+    try {
+        const file = await bot.telegram.getFile(fileId);
+        const fileUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+        const response = await axios({
+            url: fileUrl,
+            method: 'GET',
+            responseType: 'stream',
+            onDownloadProgress: (progressEvent) => {
+                const totalMB = progressEvent.total! / (1024 * 1024);
+                const downloadedMB = progressEvent.loaded / (1024 * 1024);
+                const percentage = ((progressEvent.loaded / progressEvent.total!) * 100).toFixed(2);
+                progressCallback(chatId, percentage, downloadedMB, totalMB);
+            },
+        });
+
+        const storagePath = path.join(__dirname, '..', 'video_store');
+        const filePath = `${storagePath}/${file.file_id}.mp4`;
+        const fileStream = fs.createWriteStream(filePath);
+        response.data.pipe(fileStream);
+
+        return new Promise((resolve, reject) => {
+            fileStream.on('finish', () => resolve(filePath));
+            fileStream.on('error', reject);
+        });
     } catch (error) {
-      console.error('Error downloading video:', error);
-      throw error;
+        console.error('Error downloading video:', error);
+        throw error;
     }
-  }
+}
+
+// Function to upload video to Vimeo with progress bar
+async function uploadToVimeo(localFilePath, userId, chatId, progressCallback) {
+    return new Promise((resolve, reject) => {
+        const userSetting = userSettings[userId];
+
+        vimeoClient.upload(
+            localFilePath,
+            {
+                name: `${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})`,
+                description: `Uploaded on ${new Date().toLocaleDateString()}`,
+            },
+            function (uri) {
+                console.log('Video uploaded successfully. Vimeo URI:', uri);
+                resolve(uri);
+            },
+            function (bytes_uploaded, bytes_total) {
+                const totalMB = bytes_total / (1024 * 1024);
+                const uploadedMB = bytes_uploaded / (1024 * 1024);
+                const percentage = ((bytes_uploaded / bytes_total) * 100).toFixed(2);
+                progressCallback(chatId, percentage, uploadedMB, totalMB);
+            },
+            function (error) {
+                console.error('Vimeo upload error:', error);
+                reject(error);
+            }
+        );
+    });
+}
 
 async function processUpload(ctx, steps) {
     const userId = getUserId(ctx);
     const chatId = ctx.chat.id;
     const userSetting = userSettings[userId];
-  
+
     let progressMessage;
-  
+
     try {
-        const localFilePath = await downloadVideo(userSetting.videoFileId);
+        const localFilePath = await downloadVideo(userSetting.videoFileId, chatId, (chatId, percentage, downloadedMB, totalMB) => {
+            const progressBar = generateProgressBar(percentage);
+            updateProgressMessage(chatId, progressMessage, `Downloading... ${percentage}% (${downloadedMB.toFixed(2)} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
+        });
+
         console.log('Video downloaded successfully:', localFilePath);
 
-        try {
-          // Upload the video to Vimeo
-          const videoUpload = await vimeoClient.upload(
-            localFilePath,
-            {
-              name: `Video ${userSetting.date} - ${userSetting.title}`,
-              description: `Uploaded on ${new Date().toLocaleDateString()}`,
-            },
-            function (uri) {
-              // Complete callback
-              console.log('Video uploaded successfully. Vimeo URI:', uri);
-            },
-            function (bytes_uploaded, bytes_total) {
-              // Progress callback
-              const percentage = ((bytes_uploaded / bytes_total) * 100).toFixed(2);
-              console.log(`Uploading to Vimeo... ${percentage}%`);
-            },
-            function (error) {
-              // Error callback
-              console.error('Vimeo upload error:', error);
-              ctx.reply('Error uploading video to Vimeo. Please try again later.');
-            }
-          );
-      
-          // Get the Vimeo video ID from the upload response
-          const vimeoVideoId = videoUpload.body.uri.split('/').pop();
-      
-          // Do something with the Vimeo video ID (save it, send it in a message, etc.)
-          ctx.reply(`Video uploaded to Vimeo with ID: ${vimeoVideoId}`);
-      
-          // Reset user settings
-          userSettings[userId] = {};
-      
-        } catch (error) {
-          console.error('Vimeo upload error:', error);
-          ctx.reply('Error uploading video to Vimeo. Please try again later.');
-          return;
-        }
-    
-      } catch (error) {
+        const vimeoUri = await uploadToVimeo(localFilePath, userId, chatId, (chatId, percentage, uploadedMB, totalMB) => {
+            const progressBar = generateProgressBar(percentage);
+            updateProgressMessage(chatId, progressMessage, `Uploading to Vimeo... ${percentage}% (${uploadedMB.toFixed(2)} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
+        });
+
+        // Do something with the Vimeo URI (save it, send it in a message, etc.)
+        ctx.reply(`Video uploaded to Vimeo with URI: https://vimeo.com/manage/${vimeoUri}`);
+
+        // Reset user settings
+        userSettings[userId] = {};
+
+    } catch (error) {
         console.error('Error processing video:', error);
-      }
-
-
-    for (let i = 0; i < steps; i++) {
-        const progress = (i + 1) * (100 / steps);
-        const progressBar = generateProgressBar(progress);
-
-        if (!progressMessage) {
-            // Send the initial progress message
-            progressMessage = await ctx.reply(`Uploading to Vimeo... ${progress.toFixed(2)}%\n${progressBar}`);
-        } else {
-            // Edit the existing message to update progress
-            await ctx.telegram.editMessageText(
-                chatId,
-                progressMessage.message_id,
-                null,
-                `Uploading to Vimeo... ${progress.toFixed(2)}%\n${progressBar}`
-            );
-        }
-
-        // Simulate some processing time
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        ctx.reply('Error processing video. Please try again later.');
     }
 
+    // // Simulate additional processing time
+    // for (let i = 0; i < steps; i++) {
+    //     const progress = (i + 1) * (100 / steps);
+    //     const progressBar = generateProgressBar(progress);
+
+    //     if (!progressMessage) {
+    //         // Send the initial progress message
+    //         progressMessage = await ctx.reply(`Processing... ${progress.toFixed(2)}%\n${progressBar}`);
+    //         // Store the progress message ID and chat ID
+    //         progressBars[chatId] = progressMessage.message_id;
+    //     } else {
+    //         // Edit the existing message to update progress
+    //         updateProgressMessage(chatId, progressMessage, `Processing... ${progress.toFixed(2)}%\n${progressBar}`);
+    //     }
+
+    //     // Simulate some processing time
+    //     await new Promise(resolve => setTimeout(resolve, 1000));
+    // }
+
     // Edit the final message indicating completion
-    await ctx.telegram.editMessageText(
-        chatId,
-        progressMessage.message_id,
-        null,
-        'Vimeo upload complete!\n' + generateProgressBar(100)
-    );
+    updateProgressMessage(chatId, progressMessage, 'Processing complete!\n' + generateProgressBar(100));
 }
 
 // Function to generate a simple ASCII progress bar
 function generateProgressBar(progress) {
+    const numericProgress = parseFloat(progress);
+
+    if (isNaN(numericProgress)) {
+        return 'Invalid progress value';
+    }
+
     const barLength = 20;
-    const completed = Math.round(barLength * (progress / 100));
+    const completed = Math.round(barLength * (numericProgress / 100));
     const remaining = barLength - completed;
 
     const progressBar = '█'.repeat(completed) + '░'.repeat(remaining);
 
-    return `[${progressBar}] ${progress.toFixed(2)}%`;
+    return `[${progressBar}] ${numericProgress.toFixed(2)}%`;
 }
+
+// Function to update progress message using editMessageText
+// Function to update progress message using editMessageText
+async function updateProgressMessage(chatId, messageId, text) {
+    try {
+        if (!progressBars[chatId]) {
+            progressBars[chatId] = {};
+        }
+
+        if (progressBars[chatId].message_id) {
+            // If message_id is defined, edit the existing message
+            await bot.telegram.editMessageText(chatId, progressBars[chatId].message_id, null!, text);
+        } else {
+            // If message_id is undefined, send a new message and store the message ID
+            const newMessage = await bot.telegram.sendMessage(chatId, text);
+            progressBars[chatId].message_id = newMessage.message_id;
+        }
+    } catch (error) {
+        console.error('Error updating progress message:', error);
+    }
+}
+
+
 
 // Function to get user ID from context
 function getUserId(ctx) {
-  return ctx.from?.id || ctx.message?.from?.id;
+    return ctx.from?.id || ctx.message?.from?.id;
 }
 
 // Start the bot
