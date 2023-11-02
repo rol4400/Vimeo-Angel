@@ -1,7 +1,23 @@
+import axios from "axios";
 import "dotenv/config";
 import { Telegraf, Markup } from 'telegraf';
+import { Vimeo } from 'vimeo';
+
+import fs from 'fs';
+import path from 'path';
 
 const bot = new Telegraf(process.env.BOT_TOKEN!);
+
+// Vimeo client credentials
+const clientId = process.env.CLIENT_ID;
+const clientSecret = process.env.CLIENT_SECRET;
+const accessToken = process.env.ACCESS_TOKEN;
+
+const vimeoClient = new Vimeo(
+    clientId,
+    clientSecret,
+    accessToken
+  );
 
 // Store user settings
 const userSettings = {};
@@ -299,23 +315,91 @@ function updateSetting(ctx, userId, input, match) {
     }
 }
 
+// Function to download video by file_id
+async function downloadVideo(fileId) {
+    try {
+      // Get file information using getFile method
+      const file = await bot.telegram.getFile(fileId);
+  
+      // Construct the file URL
+      const fileUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+  
+      // Download the file using a library like 'axios' or 'node-fetch'
+      const response = await axios.get(fileUrl, { responseType: 'stream' });
+
+      // Store the file in the following directory
+      var storagePath = path.join(__dirname, '..', 'video_store');
+ 
+      // Create a writable stream and save the file locally
+      const filePath = `${storagePath}/${file.file_id}.mp4`;
+      const fileStream = fs.createWriteStream(filePath);
+      response.data.pipe(fileStream);
+  
+      // Return the local file path
+      return new Promise((resolve, reject) => {
+        fileStream.on('finish', () => resolve(filePath));
+        fileStream.on('error', reject);
+      });
+    } catch (error) {
+      console.error('Error downloading video:', error);
+      throw error;
+    }
+  }
+
 async function processUpload(ctx, steps) {
     const userId = getUserId(ctx);
-    if (!userId) {
-        console.error('Unable to determine user ID');
-        return;
-    }
-
+    const chatId = ctx.chat.id;
     const userSetting = userSettings[userId];
-
-    // Check if required settings are missing
-    if (!userSetting.date || !userSetting.title || !userSetting.leader) {
-        ctx.reply('Please make sure to set the date, title, and leader before confirming.');
-        showSettingsPanel(ctx, ctx.chat!.id);
-        return;
-    }
-
+  
     let progressMessage;
+  
+    try {
+        const localFilePath = await downloadVideo(userSetting.videoFileId);
+        console.log('Video downloaded successfully:', localFilePath);
+
+        try {
+          // Upload the video to Vimeo
+          const videoUpload = await vimeoClient.upload(
+            localFilePath,
+            {
+              name: `Video ${userSetting.date} - ${userSetting.title}`,
+              description: `Uploaded on ${new Date().toLocaleDateString()}`,
+            },
+            function (uri) {
+              // Complete callback
+              console.log('Video uploaded successfully. Vimeo URI:', uri);
+            },
+            function (bytes_uploaded, bytes_total) {
+              // Progress callback
+              const percentage = ((bytes_uploaded / bytes_total) * 100).toFixed(2);
+              console.log(`Uploading to Vimeo... ${percentage}%`);
+            },
+            function (error) {
+              // Error callback
+              console.error('Vimeo upload error:', error);
+              ctx.reply('Error uploading video to Vimeo. Please try again later.');
+            }
+          );
+      
+          // Get the Vimeo video ID from the upload response
+          const vimeoVideoId = videoUpload.body.uri.split('/').pop();
+      
+          // Do something with the Vimeo video ID (save it, send it in a message, etc.)
+          ctx.reply(`Video uploaded to Vimeo with ID: ${vimeoVideoId}`);
+      
+          // Reset user settings
+          userSettings[userId] = {};
+      
+        } catch (error) {
+          console.error('Vimeo upload error:', error);
+          ctx.reply('Error uploading video to Vimeo. Please try again later.');
+          return;
+        }
+    
+      } catch (error) {
+        console.error('Error processing video:', error);
+      }
+
 
     for (let i = 0; i < steps; i++) {
         const progress = (i + 1) * (100 / steps);
@@ -323,14 +407,14 @@ async function processUpload(ctx, steps) {
 
         if (!progressMessage) {
             // Send the initial progress message
-            progressMessage = await ctx.reply(`Processing... ${progress.toFixed(2)}%\n${progressBar}`);
+            progressMessage = await ctx.reply(`Uploading to Vimeo... ${progress.toFixed(2)}%\n${progressBar}`);
         } else {
             // Edit the existing message to update progress
             await ctx.telegram.editMessageText(
-                ctx.chat.id,
+                chatId,
                 progressMessage.message_id,
                 null,
-                `Processing... ${progress.toFixed(2)}%\n${progressBar}`
+                `Uploading to Vimeo... ${progress.toFixed(2)}%\n${progressBar}`
             );
         }
 
@@ -340,15 +424,11 @@ async function processUpload(ctx, steps) {
 
     // Edit the final message indicating completion
     await ctx.telegram.editMessageText(
-        ctx.chat.id,
+        chatId,
         progressMessage.message_id,
         null,
-        'Processing complete!\n' + generateProgressBar(100)
+        'Vimeo upload complete!\n' + generateProgressBar(100)
     );
-
-    // Reset user settings after processing is complete
-    userSettings[userId] = {};
-    showSettingsPanel(ctx, ctx.chat!.id);
 }
 
 // Function to generate a simple ASCII progress bar
