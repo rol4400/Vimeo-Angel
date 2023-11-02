@@ -331,8 +331,13 @@ async function downloadVideo(fileId, chatId, progressCallback) {
                 const totalMB = progressEvent.total! / (1024 * 1024);
                 const downloadedMB = progressEvent.loaded / (1024 * 1024);
                 const percentage = ((progressEvent.loaded / progressEvent.total!) * 100).toFixed(2);
-                progressCallback(chatId, percentage, downloadedMB, totalMB);
+            
+                // Check if downloadedMB is a valid number before using toFixed
+                const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB.toString())) ? parseFloat(downloadedMB.toString()).toFixed(2) : 'N/A';
+            
+                progressCallback(percentage, downloadedMBFormatted, totalMB);
             },
+            
         });
 
         const storagePath = path.join(__dirname, '..', 'video_store');
@@ -353,6 +358,8 @@ async function downloadVideo(fileId, chatId, progressCallback) {
 // Function to upload video to Vimeo with progress bar
 async function uploadToVimeo(localFilePath, userId, chatId, progressCallback) {
     return new Promise((resolve, reject) => {
+        
+        // Get the user settings
         const userSetting = userSettings[userId];
 
         vimeoClient.upload(
@@ -362,22 +369,26 @@ async function uploadToVimeo(localFilePath, userId, chatId, progressCallback) {
                 description: `Uploaded on ${new Date().toLocaleDateString()}`,
             },
             function (uri) {
-                console.log('Video uploaded successfully. Vimeo URI:', uri);
+                // Complete callback
+                console.log('Video uploaded successfully. Vimeo link: https://vimeo.com/manage/', uri);
                 resolve(uri);
             },
             function (bytes_uploaded, bytes_total) {
+                // Progress callback
                 const totalMB = bytes_total / (1024 * 1024);
-                const uploadedMB = bytes_uploaded / (1024 * 1024);
+                const uploadedMB = !isNaN(parseFloat(bytes_uploaded)) ? bytes_uploaded / (1024 * 1024) : 'N/A';
                 const percentage = ((bytes_uploaded / bytes_total) * 100).toFixed(2);
-                progressCallback(chatId, percentage, uploadedMB, totalMB);
+                progressCallback(percentage, uploadedMB, totalMB);
             },
             function (error) {
+                // Error callback
                 console.error('Vimeo upload error:', error);
                 reject(error);
             }
         );
     });
 }
+
 
 async function processUpload(ctx, steps) {
     const userId = getUserId(ctx);
@@ -387,20 +398,30 @@ async function processUpload(ctx, steps) {
     let progressMessage;
 
     try {
-        const localFilePath = await downloadVideo(userSetting.videoFileId, chatId, (chatId, percentage, downloadedMB, totalMB) => {
-            const progressBar = generateProgressBar(percentage);
-            updateProgressMessage(chatId, progressMessage, `Downloading... ${percentage}% (${downloadedMB.toFixed(2)} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
-        });
+        // Check if progress message has been sent
+        if (!progressBars[chatId] || !progressBars[chatId].message_id) {
+            progressMessage = await ctx.reply('Preparing for processing...');
+            progressBars[chatId] = { message_id: progressMessage.message_id };
+        }
 
+        const localFilePath = await downloadVideo(userSetting.videoFileId, chatId, (percentage, downloadedMB, totalMB) => {
+            const progressBar = generateProgressBar(percentage);
+
+            const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB)) ? parseFloat(downloadedMB).toFixed(2) : 'N/A';
+            updateProgressMessage(chatId, progressBars[chatId].message_id, `Downloading... ${percentage}% (${downloadedMBFormatted} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
+           
+        });
         console.log('Video downloaded successfully:', localFilePath);
 
-        const vimeoUri = await uploadToVimeo(localFilePath, userId, chatId, (chatId, percentage, uploadedMB, totalMB) => {
+        const vimeoUri = await uploadToVimeo(localFilePath, userId, chatId, (percentage, uploadedMB, totalMB) => {
             const progressBar = generateProgressBar(percentage);
-            updateProgressMessage(chatId, progressMessage, `Uploading to Vimeo... ${percentage}% (${uploadedMB.toFixed(2)} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
+
+            const uploadedMBFormatted = !isNaN(parseFloat(uploadedMB)) ? parseFloat(uploadedMB).toFixed(2) : 'N/A';
+            updateProgressMessage(chatId, progressBars[chatId].message_id, `Uploading to Vimeo... ${percentage}% (${uploadedMBFormatted} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
         });
 
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
-        ctx.reply(`Video uploaded to Vimeo with URI: https://vimeo.com/manage/${vimeoUri}`);
+        ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage/: ${vimeoUri}`);
 
         // Reset user settings
         userSettings[userId] = {};
@@ -410,7 +431,7 @@ async function processUpload(ctx, steps) {
         ctx.reply('Error processing video. Please try again later.');
     }
 
-    // // Simulate additional processing time
+    // Simulate additional processing time
     // for (let i = 0; i < steps; i++) {
     //     const progress = (i + 1) * (100 / steps);
     //     const progressBar = generateProgressBar(progress);
@@ -418,11 +439,15 @@ async function processUpload(ctx, steps) {
     //     if (!progressMessage) {
     //         // Send the initial progress message
     //         progressMessage = await ctx.reply(`Processing... ${progress.toFixed(2)}%\n${progressBar}`);
-    //         // Store the progress message ID and chat ID
-    //         progressBars[chatId] = progressMessage.message_id;
+    //         progressBars[chatId] = { message_id: progressMessage.message_id };
     //     } else {
     //         // Edit the existing message to update progress
-    //         updateProgressMessage(chatId, progressMessage, `Processing... ${progress.toFixed(2)}%\n${progressBar}`);
+    //         await ctx.telegram.editMessageText(
+    //             chatId,
+    //             progressBars[chatId].message_id,
+    //             null,
+    //             `Processing... ${progress.toFixed(2)}%\n${progressBar}`
+    //         );
     //     }
 
     //     // Simulate some processing time
@@ -430,14 +455,19 @@ async function processUpload(ctx, steps) {
     // }
 
     // Edit the final message indicating completion
-    updateProgressMessage(chatId, progressMessage, 'Processing complete!\n' + generateProgressBar(100));
+    await ctx.telegram.editMessageText(
+        chatId,
+        progressBars[chatId].message_id,
+        null,
+        'Processing complete!\n' + generateProgressBar(100)
+    );
 }
 
 // Function to generate a simple ASCII progress bar
 function generateProgressBar(progress) {
     const numericProgress = parseFloat(progress);
 
-    if (isNaN(numericProgress)) {
+    if (isNaN(numericProgress) || numericProgress < 0 || numericProgress > 100) {
         return 'Invalid progress value';
     }
 
@@ -445,12 +475,12 @@ function generateProgressBar(progress) {
     const completed = Math.round(barLength * (numericProgress / 100));
     const remaining = barLength - completed;
 
-    const progressBar = '█'.repeat(completed) + '░'.repeat(remaining);
+    const progressBar = '█'.repeat(Math.max(completed, 0)) + '░'.repeat(Math.max(remaining, 0));
 
     return `[${progressBar}] ${numericProgress.toFixed(2)}%`;
 }
 
-// Function to update progress message using editMessageText
+
 // Function to update progress message using editMessageText
 async function updateProgressMessage(chatId, messageId, text) {
     try {
