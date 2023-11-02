@@ -133,6 +133,11 @@ bot.on('text', (ctx) => {
         return;
     }
 
+    if (!userSettings[userId].videoFileId) {
+        ctx.reply("Please upload a video file here before I can do anything");
+        return;
+    }
+
     const chatId = ctx.chat.id;
     const text = ctx.message.text;
 
@@ -177,6 +182,12 @@ function showSettingsPanel(ctx, chatId) {
 // Function to handle setting inputs
 function handleSettingInput(ctx, userId, input) {
     const lowercaseInput = ctx.update.message.text;
+
+    // Check if the message is a premature reply
+    if (!ctx.update.message.reply_to_message || !ctx.update.message.reply_to_message.text) {
+        ctx.reply("Please reply to the question to provide your answer.");
+        return;
+    }
 
     // Use a simplified regex to extract the setting
     const match = ctx.update.message.reply_to_message.text.match(/.*Please enter the (\w+)/);
@@ -228,7 +239,6 @@ function updateSetting(ctx, userId, input, match) {
                     day >= 1 && day <= new Date(year + 2000, month, 0).getDate() // Validating day based on the month
                 ) {
                     userSetting.date = input;
-                    ctx.reply('Date updated successfully.');
                     showSettingsPanel(ctx, ctx.message.chat.id);
                 } else {
                     ctx.reply('Invalid date format. You must use the format YYMMDD.');
@@ -245,21 +255,18 @@ function updateSetting(ctx, userId, input, match) {
             case 'password':
                 // Update the password setting
                 userSetting.password = input;
-                ctx.reply('Password updated successfully.');
                 showSettingsPanel(ctx, ctx.message.chat.id);
                 break;
 
             case 'title':
                 // Update the title setting
                 userSetting.title = input;
-                ctx.reply('Title updated successfully.');
                 showSettingsPanel(ctx, ctx.message.chat.id);
                 break;
 
             case 'leader':
                 // Update the leader setting
                 userSetting.leader = input;
-                ctx.reply('Leader updated successfully.');
                 showSettingsPanel(ctx, ctx.message.chat.id);
                 break;
 
