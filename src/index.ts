@@ -357,38 +357,70 @@ async function downloadVideo(fileId, chatId, progressCallback) {
 
 // Function to upload video to Vimeo with progress bar
 async function uploadToVimeo(localFilePath, userId, chatId, progressCallback) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         
         // Get the user settings
         const userSetting = userSettings[userId];
 
-        vimeoClient.upload(
-            localFilePath,
-            {
-                name: `${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})`,
-                description: `Uploaded on ${new Date().toLocaleDateString()}`,
-            },
-            function (uri) {
-                // Complete callback
-                console.log('Video uploaded successfully. Vimeo link: https://vimeo.com/manage/', uri);
-                resolve(uri);
-            },
-            function (bytes_uploaded, bytes_total) {
-                // Progress callback
-                const totalMB = bytes_total / (1024 * 1024);
-                const uploadedMB = !isNaN(parseFloat(bytes_uploaded)) ? bytes_uploaded / (1024 * 1024) : 'N/A';
-                const percentage = ((bytes_uploaded / bytes_total) * 100).toFixed(2);
-                progressCallback(percentage, uploadedMB, totalMB);
-            },
-            function (error) {
-                // Error callback
-                console.error('Vimeo upload error:', error);
-                reject(error);
-            }
-        );
+        try {
+            const videoUpload = await vimeoClient.upload(
+                localFilePath,
+                {
+                    name: `${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})`,
+                    description: `Uploaded on ${new Date().toLocaleDateString()}`,
+                },
+                async function (uri) {
+                    // Complete callback
+                    console.log('Video uploaded successfully. Vimeo link: https://vimeo.com/manage/', uri);
+
+                    // Set privacy settings with the provided password
+                    const password = userSetting.password || process.env.DEFAULT_VIMEO_PASSWORD; // Replace with the actual property from your settings
+                    await setPrivacySettings(uri.split('/').pop(), password);
+
+                    resolve(uri);
+                },
+                function (bytes_uploaded, bytes_total) {
+                    // Progress callback
+                    const totalMB = bytes_total / (1024 * 1024);
+                    const uploadedMB = !isNaN(parseFloat(bytes_uploaded)) ? bytes_uploaded / (1024 * 1024) : 'N/A';
+                    const percentage = ((bytes_uploaded / bytes_total) * 100).toFixed(2);
+                    progressCallback(percentage, uploadedMB, totalMB);
+                },
+                function (error) {
+                    // Error callback
+                    console.error('Vimeo upload error:', error);
+                    reject(error);
+                }
+            );
+        } catch (error) {
+            console.error('Error uploading video to Vimeo:', error);
+            reject(error);
+        }
     });
 }
 
+// Function to set privacy settings for the video on Vimeo
+async function setPrivacySettings(videoId, password) {
+    return new Promise((resolve, reject) => {
+        vimeoClient.request({
+            method: 'PATCH',
+            path: `/videos/${videoId}`,
+            query: {
+                password: password,
+                privacy: {
+                    view: 'password',
+                },
+            },
+        }, function (error, body, status_code, headers) {
+            if (error) {
+                console.error('Vimeo set privacy settings error:', error);
+                reject(error);
+            } else {
+                resolve(body);
+            }
+        });
+    });
+}
 
 async function processUpload(ctx, steps) {
     const userId = getUserId(ctx);
@@ -404,6 +436,7 @@ async function processUpload(ctx, steps) {
             progressBars[chatId] = { message_id: progressMessage.message_id };
         }
 
+        // Download the video from telegram
         const localFilePath = await downloadVideo(userSetting.videoFileId, chatId, (percentage, downloadedMB, totalMB) => {
             const progressBar = generateProgressBar(percentage);
 
@@ -413,6 +446,7 @@ async function processUpload(ctx, steps) {
         });
         console.log('Video downloaded successfully:', localFilePath);
 
+        // Upload the video to vimeo
         const vimeoUri = await uploadToVimeo(localFilePath, userId, chatId, (percentage, uploadedMB, totalMB) => {
             const progressBar = generateProgressBar(percentage);
 
@@ -421,7 +455,7 @@ async function processUpload(ctx, steps) {
         });
 
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
-        ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage/: ${vimeoUri}`);
+        ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage/${vimeoUri}`);
 
         // Reset user settings
         userSettings[userId] = {};
@@ -500,8 +534,6 @@ async function updateProgressMessage(chatId, messageId, text) {
         console.error('Error updating progress message:', error);
     }
 }
-
-
 
 // Function to get user ID from context
 function getUserId(ctx) {
