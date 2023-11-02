@@ -377,6 +377,9 @@ async function uploadToVimeo(localFilePath, userId, chatId, progressCallback) {
                     const password = userSetting.password || process.env.DEFAULT_VIMEO_PASSWORD; // Replace with the actual property from your settings
                     await setPrivacySettings(uri.split('/').pop(), password);
 
+                    // Delete the local file after the upload is complete
+                    await deleteLocalFile(localFilePath);
+
                     resolve(uri);
                 },
                 function (bytes_uploaded, bytes_total) {
@@ -389,14 +392,31 @@ async function uploadToVimeo(localFilePath, userId, chatId, progressCallback) {
                 function (error) {
                     // Error callback
                     console.error('Vimeo upload error:', error);
+
+                    // Delete the local file after the upload fails
+                    deleteLocalFile(localFilePath);
                     reject(error);
                 }
             );
         } catch (error) {
             console.error('Error uploading video to Vimeo:', error);
+
+            // Delete the local file after the upload fails
+            deleteLocalFile(localFilePath);
             reject(error);
         }
     });
+}
+
+async function deleteLocalFile(filePath) {
+    try {
+        await fs.unlink(filePath, (err) => {
+            if (err) throw err;
+            console.log('Local file deleted successfully:', filePath);
+          });
+    } catch (deleteError) {
+        console.error('Error deleting local file:', deleteError);
+    }
 }
 
 // Function to set privacy settings for the video on Vimeo
