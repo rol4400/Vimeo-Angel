@@ -103,6 +103,22 @@ bot.on('callback_query', (ctx) => {
           destinations.map(dest => [Markup.button.callback(`📍 ${dest}`, `select_destination_${dest}`)])
         ));
         break;
+
+    case 'complete':
+        // Save settings and perform necessary actions
+        // For now, just log the settings
+        console.log(`Settings for user ${userId}:`, userSettings[userId]);
+
+        processUpload(ctx, 5);
+
+        break;
+
+    case 'cancel':
+        // Reset user settings
+        userSettings[userId] = {};
+        ctx.reply("Upload has been cancelled. Please send me another video when you are ready");
+
+        break;
     }
   });
   
@@ -193,28 +209,34 @@ function handleSettingInput(ctx, userId, input) {
     const match = ctx.update.message.reply_to_message.text.match(/.*Please enter the (\w+)/);
     console.log(match);
 
-    switch (lowercaseInput) {
-        case 'complete':
-            // Save settings and perform necessary actions
-            // For now, just log the settings
-            console.log(`Settings for user ${userId}:`, userSettings[userId]);
+     // Handle specific setting inputs
+     updateSetting(ctx, userId, lowercaseInput, match);
 
-            // Reset user settings
-            userSettings[userId] = {};
+    // switch (lowercaseInput) {
+    //     case 'complete':
+    //         // Save settings and perform necessary actions
+    //         // For now, just log the settings
+    //         console.log(`Settings for user ${userId}:`, userSettings[userId]);
 
-            break;
+    //         processUpload(ctx, 5);
 
-        case 'cancel':
-            // Reset user settings
-            userSettings[userId] = {};
+    //         // Reset user settings
+    //         userSettings[userId] = {};
 
-            break;
+    //         break;
 
-        default:
-            // Handle specific setting inputs
-            updateSetting(ctx, userId, lowercaseInput, match);
-            break;
-    }
+    //     case 'cancel':
+    //         // Reset user settings
+    //         userSettings[userId] = {};
+    //         ctx.reply("Upload has been cancelled. Please send me another video when you are ready");
+
+    //         break;
+
+    //     default:
+           
+    //         break;
+// }
+    
 }
 
 // Function to update specific settings
@@ -275,6 +297,69 @@ function updateSetting(ctx, userId, input, match) {
                 break;
         }
     }
+}
+
+async function processUpload(ctx, steps) {
+    const userId = getUserId(ctx);
+    if (!userId) {
+        console.error('Unable to determine user ID');
+        return;
+    }
+
+    const userSetting = userSettings[userId];
+
+    // Check if required settings are missing
+    if (!userSetting.date || !userSetting.title || !userSetting.leader) {
+        ctx.reply('Please make sure to set the date, title, and leader before confirming.');
+        showSettingsPanel(ctx, ctx.chat!.id);
+        return;
+    }
+
+    let progressMessage;
+
+    for (let i = 0; i < steps; i++) {
+        const progress = (i + 1) * (100 / steps);
+        const progressBar = generateProgressBar(progress);
+
+        if (!progressMessage) {
+            // Send the initial progress message
+            progressMessage = await ctx.reply(`Processing... ${progress.toFixed(2)}%\n${progressBar}`);
+        } else {
+            // Edit the existing message to update progress
+            await ctx.telegram.editMessageText(
+                ctx.chat.id,
+                progressMessage.message_id,
+                null,
+                `Processing... ${progress.toFixed(2)}%\n${progressBar}`
+            );
+        }
+
+        // Simulate some processing time
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    // Edit the final message indicating completion
+    await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        progressMessage.message_id,
+        null,
+        'Processing complete!\n' + generateProgressBar(100)
+    );
+
+    // Reset user settings after processing is complete
+    userSettings[userId] = {};
+    showSettingsPanel(ctx, ctx.chat!.id);
+}
+
+// Function to generate a simple ASCII progress bar
+function generateProgressBar(progress) {
+    const barLength = 20;
+    const completed = Math.round(barLength * (progress / 100));
+    const remaining = barLength - completed;
+
+    const progressBar = '█'.repeat(completed) + '░'.repeat(remaining);
+
+    return `[${progressBar}] ${progress.toFixed(2)}%`;
 }
 
 // Function to get user ID from context
