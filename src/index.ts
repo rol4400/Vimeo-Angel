@@ -23,7 +23,7 @@ const vimeoClient = new Vimeo(
 const userSettings = {};
 
 // Define destinations
-const destinations = [['Destination1', '123123123'], ['Destination2', '3453453453'], ['Destination3', '76798667']];
+var destinations = [[,]];
 
 // Middleware to check if the user has settings
 bot.use((ctx, next) => {
@@ -43,6 +43,26 @@ bot.use((ctx, next) => {
 // Start command handler
 bot.start((ctx) => {
   ctx.reply('Welcome! Please upload a video file to start.');
+});
+
+// Function to handle new members (including the bot) joining a chat
+bot.on('new_chat_members', (ctx) => {
+    const chatId = ctx.message.chat.id;
+    const chatName = ctx.message.chat.title; // Use chat.title instead of chat.name
+
+    // Check if the bot is among the new members
+    const botJoined = ctx.message.new_chat_members.some(member => member.id === bot.botInfo!.id);
+
+    if (botJoined) {
+        // Check if the chat is not already in destinations
+        if (!destinations.some(dest => dest[1] === chatId.toString())) {
+            // Add the chat to destinations array
+            destinations.push([chatName, chatId.toString()]);
+
+            // Log the addition
+            console.log(`Bot added to group: ${chatName} (ID: ${chatId})`);
+        }
+    }
 });
 
 // Handle video messages
@@ -72,7 +92,39 @@ bot.on('callback_query', (ctx) => {
   
     // Use type assertion to tell TypeScript that data exists
     const action = (ctx.callbackQuery as any).data;
+
+    // Handle destination selection
+    var match = action.match(/select_destination_(.+)/);
+    if (match && match[1]) {
+
+        const destination = match[1];
+
+        // Save the selected destination
+        userSettings[userId].destination = destination;
+
+        // Show settings panel
+        showSettingsPanel(ctx, ctx.chat!.id);
+
+        return;
+    }
   
+    // Handle directly sending to a destination
+    match = action.match(/send_to_destination_(.+)/);
+    if (match && match[1]) {
+        const userId = getUserId(ctx);
+
+        const destination = match[1];
+
+        // Save the selected destination
+        userSettings[userId].destination = destination;
+
+       // Send the message
+       sendToDestination(ctx, destination);
+
+        return;
+    }
+  
+    // Handle other simple actions
     switch (action) {
       case 'edit_date':
         ctx.reply('📅 Please enter the date in the format YYMMDD:',
@@ -120,6 +172,12 @@ bot.on('callback_query', (ctx) => {
         ));
         break;
 
+      case 'select_different_room':
+        ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
+            destinations.map(dest => [Markup.button.callback(`📍 ${dest[0]}`, `send_to_destination_${dest[1]}`)])
+        ));
+        break;
+
     case 'complete':
         // Save settings and perform necessary actions
         // For now, just log the settings
@@ -135,30 +193,19 @@ bot.on('callback_query', (ctx) => {
         ctx.reply("Cancelled. Please send me another video when you are ready");
 
         break;
+
+    case 'send_link':
+        // Send the link to the specified destination
+        sendToDestination(ctx, userSettings[userId].destination);
+        break;
+
+    default:
+        console.log("DEFAULT")
+        console.log(action)
+        break;
+
     }
   });
-  
-  
-
-// Handle destination selection
-bot.action(/select_destination_(.+)/, (ctx) => {
-
-    console.log(ctx.match[1])
-
-  const userId = getUserId(ctx);
-  if (!userId) {
-    console.error('Unable to determine user ID');
-    return;
-  }
-
-  const destination = ctx.match[1];
-
-  // Save the selected destination
-  userSettings[userId].destination = destination;
-
-  // Show settings panel
-  showSettingsPanel(ctx, ctx.chat!.id);
-});
 
 // Handle text messages
 bot.on('text', (ctx) => {
@@ -191,10 +238,12 @@ function showSettingsPanel(ctx, chatId) {
 
   const userSetting = userSettings[userId];
 
+  const destinationName = destinations.find(([_, id]) => id === userSetting.destination)?.[0];
+
   // Check if a video is being uploaded
-  const uploadingVideoMessage = userSetting.videoFileId
-    ? `Uploading Video:\nTitle: ${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})\nPassword: ${userSetting.password || 'password'}\nSend destination: ${userSetting.destination || 'destination'}`
-    : 'No video uploaded yet. Please upload a video to start.';
+    const uploadingVideoMessage = userSetting.videoFileId
+    ? `📹 Uploading Video: ${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
+    : '🚫 No video uploaded yet. Please upload a video to start.';
 
   ctx.reply(uploadingVideoMessage, Markup.inlineKeyboard([
     [
@@ -482,6 +531,7 @@ async function processUpload(ctx) {
 
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
         ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage/${vimeoUri}`);
+        userSetting.vimeoLink = `https://vimeo.com/manage/${vimeoUri}`;
 
         // Prompt user to send the link to the designated chatroom
         promptSendVideo(ctx);
@@ -540,6 +590,23 @@ function promptSendVideo(ctx) {
     ]);
 
     ctx.replyWithMarkdown('Send the Vimeo link to the designated chatroom?', sendLinkOptions);
+}
+
+function sendToDestination(ctx, chatId) {
+
+    // Get the settings for the current video
+    const userId = getUserId(ctx);
+    const userSetting = userSettings[userId];
+
+    // Generate the telegram message 
+    var message = `${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})
+    ${userSetting.vimeoLink}
+    Pass: ${userSetting.password}`;
+
+    bot.telegram.sendMessage(chatId, message)
+
+    ctx.reply(`Link has been sent to the chat`);
+
 }
 
 // Function to generate a simple ASCII progress bar
