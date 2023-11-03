@@ -23,7 +23,7 @@ const vimeoClient = new Vimeo(
 const userSettings = {};
 
 // Define destinations
-const destinations = ['Destination1', 'Destination2', 'Destination3'];
+const destinations = [['Destination1', '123123123'], ['Destination2', '3453453453'], ['Destination3', '76798667']];
 
 // Middleware to check if the user has settings
 bot.use((ctx, next) => {
@@ -116,7 +116,7 @@ bot.on('callback_query', (ctx) => {
   
       case 'edit_destination':
         ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
-          destinations.map(dest => [Markup.button.callback(`📍 ${dest}`, `select_destination_${dest}`)])
+          destinations.map(dest => [Markup.button.callback(`📍 ${dest[0]}`, `select_destination_${dest[1]}`)])
         ));
         break;
 
@@ -125,14 +125,14 @@ bot.on('callback_query', (ctx) => {
         // For now, just log the settings
         console.log(`Settings for user ${userId}:`, userSettings[userId]);
 
-        processUpload(ctx, 5);
+        processUpload(ctx);
 
         break;
 
     case 'cancel':
         // Reset user settings
         userSettings[userId] = {};
-        ctx.reply("Upload has been cancelled. Please send me another video when you are ready");
+        ctx.reply("Cancelled. Please send me another video when you are ready");
 
         break;
     }
@@ -142,6 +142,9 @@ bot.on('callback_query', (ctx) => {
 
 // Handle destination selection
 bot.action(/select_destination_(.+)/, (ctx) => {
+
+    console.log(ctx.match[1])
+
   const userId = getUserId(ctx);
   if (!userId) {
     console.error('Unable to determine user ID');
@@ -159,6 +162,7 @@ bot.action(/select_destination_(.+)/, (ctx) => {
 
 // Handle text messages
 bot.on('text', (ctx) => {
+
     const userId = getUserId(ctx);
     if (!userId) {
         console.error('Unable to determine user ID');
@@ -442,13 +446,15 @@ async function setPrivacySettings(videoId, password) {
     });
 }
 
-async function processUpload(ctx, steps) {
+async function processUpload(ctx) {
     const userId = getUserId(ctx);
     const chatId = ctx.chat.id;
     const userSetting = userSettings[userId];
 
     let progressMessage;
 
+    promptSendVideo(ctx);
+    return;
     try {
         // Check if progress message has been sent
         if (!progressBars[chatId] || !progressBars[chatId].message_id) {
@@ -477,8 +483,11 @@ async function processUpload(ctx, steps) {
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
         ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage/${vimeoUri}`);
 
+        // Prompt user to send the link to the designated chatroom
+        promptSendVideo(ctx);
+
         // Reset user settings
-        userSettings[userId] = {};
+        // userSettings[userId] = {};
 
     } catch (error) {
         console.error('Error processing video:', error);
@@ -515,6 +524,22 @@ async function processUpload(ctx, steps) {
         null,
         'Processing complete!\n' + generateProgressBar(100)
     );
+}
+
+// Function to prompt where to send the video
+function promptSendVideo(ctx) {
+    // Prompt user to send the link to the designated chatroom
+    const sendLinkOptions = Markup.inlineKeyboard([
+        [
+            Markup.button.callback('✅ Send', 'send_link'),
+            Markup.button.callback('Select Another Room', 'select_different_room'),
+        ],
+        [
+            Markup.button.callback('❌ Cancel', 'cancel'),
+        ]
+    ]);
+
+    ctx.replyWithMarkdown('Send the Vimeo link to the designated chatroom?', sendLinkOptions);
 }
 
 // Function to generate a simple ASCII progress bar
