@@ -15,12 +15,14 @@ const configDb = detaInstance.Base("Configuration");
 const userSettings = {};
 
 // Define destinations
-var destinations = [];
+var destinations;
 
 // Initialisation
-async function init () {
-    destinations = (await configDb.get("destinations")).value;
-};
+async function init() {
+    const result = await configDb.get("destinations");
+    destinations = (result && result.value) || [["",""]];
+}
+
 init();
 
 // Middleware to check if the user has settings
@@ -46,7 +48,7 @@ bot.start((ctx) => {
 // Function to handle new members (including the bot) joining a chat
 bot.on('new_chat_members', (ctx) => {
     const chatId = ctx.message.chat.id;
-    const chatName = ctx.message.chat.title; // Use chat.title instead of chat.name
+    const chatName = (ctx.message.chat as any).title; 
 
     // Check if the bot is among the new members
     const botJoined = ctx.message.new_chat_members.some(member => member.id === bot.botInfo!.id);
