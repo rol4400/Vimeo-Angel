@@ -1,15 +1,28 @@
 import { Telegraf, Markup } from 'telegraf';
 import { Deta } from 'deta';
-
 import { getUserId, formatTime, parseTime} from "./helpers"
 import { processUpload } from "./uploader"
+import { getPhoneCode, savePhoneCode } from "./mtproto"
+
+import "dotenv/config.js";
 
 const bot = new Telegraf(process.env.BOT_TOKEN!);
-
 
 // Deta space data storage
 const detaInstance = Deta();  //instantiate with Data Key or env DETA_PROJECT_KEY
 const configDb = detaInstance.Base("Configuration");
+
+// Telegram MTPROTO API Configuration
+import { Api, TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions';
+import { config } from 'dotenv';
+
+const apiId = parseInt(process.env.TELE_API_ID!);
+const apiHash = process.env.TELE_API_HASH!;
+const session = new StringSession(process.env.TELE_STR_SESSION);
+
+// Store the user MTPROTO telegram clients for auth purposes
+var userClients = {}
 
 // Store user settings
 const userSettings = {};
@@ -22,7 +35,6 @@ async function init() {
     const result = await configDb.get("destinations");
     destinations = (result && result.value) || [["",""]];
 }
-
 init();
 
 // Middleware to check if the user has settings
@@ -44,6 +56,26 @@ bot.use((ctx, next) => {
 bot.start((ctx) => {
   ctx.reply('Welcome! Please upload a video file to start.');
 });
+
+bot.command('authenticate', async (ctx) => {
+    const userId = getUserId(ctx);
+  
+    if (!userId) {
+      console.error('Unable to determine user ID');
+      return;
+    }
+
+    userClients[userId] = new TelegramClient(session, apiId, apiHash, {})
+  
+    // Prompt the user to enter their phone number
+    ctx.reply('📞 Please enter the phone number of this device (e.g. +61499 xxx xxx):',
+    {
+        reply_markup: {
+            force_reply: true,
+            input_field_placeholder: "Please use international format (e.g. +61499 xxx xxx)",
+        },
+    },);
+});  
 
 // Function to handle new members (including the bot) joining a chat
 bot.on('new_chat_members', (ctx) => {
@@ -135,44 +167,44 @@ bot.on('callback_query', (ctx) => {
     // Handle other simple actions
     switch (action) {
         case 'edit_date':
-        ctx.reply('📅 Please enter the date in the format YYMMDD:',
-        {
-            reply_markup: {
-                force_reply: true,
-                input_field_placeholder: "YYMMDD",
-            },
-        },);
-        break;
+            ctx.reply('📅 Please enter the date in the format YYMMDD:',
+            {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "YYMMDD",
+                },
+            },);
+            break;
 
         case 'edit_password':
-        ctx.reply('🔐 Please enter the password:',
-        {
-            reply_markup: {
-                force_reply: true,
-                input_field_placeholder: "Password",
-            },
-        },);
-        break;
+            ctx.reply('🔐 Please enter the password:',
+            {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "Password",
+                },
+            },);
+            break;
 
         case 'edit_title':
         ctx.reply('📝 Please enter the title:',
-        {
-            reply_markup: {
-                force_reply: true,
-                input_field_placeholder: "Education Title",
-            },
-        },);
-        break;
+            {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "Education Title",
+                },
+            },);
+            break;
 
         case 'edit_leader':
-        ctx.reply('👤 Please enter the leader:',
-        {
-            reply_markup: {
-                force_reply: true,
-                input_field_placeholder: "Education Leader Name & Title",
-            },
-        },);
-        break;
+            ctx.reply('👤 Please enter the leader:',
+            {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "Education Leader Name & Title",
+                },
+            },);
+            break;
     
         case 'edit_destination':
             ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
@@ -228,7 +260,7 @@ bot.on('callback_query', (ctx) => {
             }
 
             // Perform the upload
-            processUpload(ctx, bot, userSettings, promptSendVideo);
+            processUpload(ctx, bot, Api, client, userSettings, promptSendVideo);
 
             break;
 
@@ -261,7 +293,8 @@ bot.on('text', (ctx) => {
         return;
     }
 
-    if (!userSettings[userId].videoFileId) {
+    var authenticated = false;
+    if (!userSettings[userId].videoFileId && authenticated) {
         ctx.reply("Please upload a video file here before I can do anything");
         return;
     }
@@ -351,6 +384,29 @@ function updateSetting(ctx, userId, input, match) {
         const setting = match[1];
 
         switch (setting) {
+            case 'phone':
+                // Store the phone number
+                userSetting.phoneNumber = input;
+
+                // Send the 2FA code
+                getPhoneCode(userClients[userId], input);
+
+                // Ask for the 2FA code
+                ctx.reply('🔒 Please enter the 2fa authentication code. It will soon be sent to you on telegram (be patient 🙂)',
+                    {
+                        reply_markup: {
+                            force_reply: true,
+                            input_field_placeholder: "Phone 2FA Code",
+                        },
+                    });
+                    
+                break;
+
+            case '2fa':
+                // Try the 2FA code and store the session
+                savePhoneCode(configDb, userClients[userId], input)
+                break;
+                
             case 'date':
                 // Validate and update the date setting
                 const year = Number(input.substring(0, 2));
