@@ -2,21 +2,27 @@
   "name": "zoom-angel",
   "version": "1.0.0",
   "description": "For automatically managing zoom recordings and share links",
-  "main": "index.js",
+  "main": "telegram_bot/bot.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/index.ts",
-    "start-prod-server": "pm2 start dist/index.js"
+    "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
+    "start-prod-server": "pm2 start dist/telegram_bot/bot.js",
+    "start-filemon": "electron src/folder_monitor/index.ts",
+    "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "axios": "^1.6.0",
+    "chokidar": "^3.5.3",
     "deta": "^2.0.0",
     "dotenv": "^16.3.1",
+    "electron": "^27.0.3",
+    "electron-dialog": "^2.0.0",
     "ffmpeg-installer": "^1.0.2",
     "fluent-ffmpeg": "^2.1.2",
+    "tailwindcss": "^3.3.5",
     "telegraf": "^4.15.0",
     "vimeo": "^2.3.1"
   },
