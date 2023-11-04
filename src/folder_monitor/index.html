@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Folder Monitor</title>
+  <link href="./compiled-styles.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+
+  <div class="container mx-auto mt-8 p-8 bg-white rounded shadow-md">
+    <h1 class="text-2xl font-bold mb-6">Folder Monitor</h1>
+    
+    <div class="mb-6">
+      <label for="folderInput" class="block text-sm font-medium text-gray-600">Select Folder to Monitor:</label>
+      <div class="mt-1 relative rounded-md shadow-sm">
+        <input type="text" id="folderInput" readonly class="form-input py-2 px-4 block w-full leading-5 rounded-md transition duration-150 ease-in-out sm:text-sm sm:leading-5">
+        <button onclick="selectFolder()" class="absolute inset-y-0 right-0 px-4 py-2 bg-indigo-500 text-white rounded-md">Select Folder</button>
+      </div>
+    </div>
+
+    <div class="mb-6">
+      <label for="chatroomSelect" class="block text-sm font-medium text-gray-600">Select Chatroom:</label>
+      <div class="mt-1 relative rounded-md shadow-sm">
+        <select id="chatroomSelect" class="form-select py-2 px-4 block w-full leading-5 rounded-md transition duration-150 ease-in-out sm:text-sm sm:leading-5">
+          <option value="" selected>Select Chatroom</option>
+        </select>
+        <button onclick="refreshChatrooms()" class="absolute inset-y-0 right-0 px-4 py-2 bg-gray-500 text-white rounded-md">Refresh Chatrooms</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="./renderer.js"></script>
+</body>
+</html>
