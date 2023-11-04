@@ -1,19 +1,17 @@
+import axios from 'axios';
 import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
-import axios from 'axios';
 import { getUserId } from './helpers';
 import fs from 'fs';
-import path from 'path';
+import path, { resolve } from 'path';
 
 const exec = promisify(execCallback);
 
-import { Vimeo } from 'vimeo';
-
 // Vimeo client credentials
+import { Vimeo } from 'vimeo';
 const clientId = process.env.CLIENT_ID;
 const clientSecret = process.env.CLIENT_SECRET;
 const accessToken = process.env.ACCESS_TOKEN;
-
 
 const vimeoClient = new Vimeo(
     clientId,
@@ -25,40 +23,85 @@ const vimeoClient = new Vimeo(
 const progressBars = {};
 
 // Function to download video by file_id with progress bar
-async function downloadVideo(fileId, chatId, bot, progressCallback) {
-    try {
-        const file = await bot.telegram.getFile(fileId);
-        const fileUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
-        const response = await axios({
-            url: fileUrl,
-            method: 'GET',
-            responseType: 'stream',
-            onDownloadProgress: (progressEvent) => {
-                const totalMB = progressEvent.total! / (1024 * 1024);
-                const downloadedMB = progressEvent.loaded / (1024 * 1024);
-                const percentage = ((progressEvent.loaded / progressEvent.total!) * 100).toFixed(2);
+// async function downloadVideo(fileId, chatId, bot, progressCallback) {
+//     try {
+//         const file = await bot.telegram.getFile(fileId);
+//         const fileUrl = `https://mtprotoApi.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+//         const response = await axios({
+//             url: fileUrl,
+//             method: 'GET',
+//             responseType: 'stream',
+//             onDownloadProgress: (progressEvent) => {
+//                 const totalMB = progressEvent.total! / (1024 * 1024);
+//                 const downloadedMB = progressEvent.loaded / (1024 * 1024);
+//                 const percentage = ((progressEvent.loaded / progressEvent.total!) * 100).toFixed(2);
             
-                // Check if downloadedMB is a valid number before using toFixed
-                const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB.toString())) ? parseFloat(downloadedMB.toString()).toFixed(2) : 'N/A';
+//                 // Check if downloadedMB is a valid number before using toFixed
+//                 const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB.toString())) ? parseFloat(downloadedMB.toString()).toFixed(2) : 'N/A';
             
-                progressCallback(percentage, downloadedMBFormatted, totalMB);
-            },
+//                 progressCallback(percentage, downloadedMBFormatted, totalMB);
+//             },
             
-        });
+//         });
 
-        const storagePath = path.join(__dirname, '..', 'video_store');
-        const filePath = `${storagePath}/${file.file_id}.mp4`;
-        const fileStream = fs.createWriteStream(filePath);
-        response.data.pipe(fileStream);
+//         const storagePath = path.join(__dirname, '..', 'video_store');
+//         const filePath = `${storagePath}/${file.file_id}.mp4`;
+//         const fileStream = fs.createWriteStream(filePath);
+//         response.data.pipe(fileStream);
 
-        return new Promise((resolve, reject) => {
-            fileStream.on('finish', () => resolve(filePath));
-            fileStream.on('error', reject);
-        });
-    } catch (error) {
-        console.error('Error downloading video:', error);
-        throw error;
-    }
+//         return new Promise((resolve, reject) => {
+//             fileStream.on('finish', () => resolve(filePath));
+//             fileStream.on('error', reject);
+//         });
+//     } catch (error) {
+//         console.error('Error downloading video:', error);
+//         throw error;
+//     }
+// }
+
+async function downloadVideo(fileId, mtprotoApi, client, progressCallback) {
+  try {
+    // Get the input location
+    const location = new mtprotoApi.InputDocumentFileLocation({
+      id: fileId.id,
+      accessHash: fileId.accessHash,
+      fileReference: fileId.fileReference,
+      thumbSize: '',
+    });
+
+    // Download the file
+    const downloadedFile = await client.downloadFile(location, {});
+
+    // File handling logic
+    const storagePath = path.join(__dirname, '..', 'video_store');
+    const filePath = `${storagePath}/${fileId.id}.mp4`;
+    const fileStream = fs.createWriteStream(filePath);
+
+    // Variables for progress tracking
+    let totalBytesReceived = 0;
+    const totalBytes = downloadedFile.bytes.data.length;
+
+    // Write the file content to the stream
+    fileStream.write(downloadedFile.bytes.data);
+
+    // Handle progress
+    fileStream.on('data', (chunk) => {
+      totalBytesReceived += chunk.length;
+
+      const percentage = ((totalBytesReceived / totalBytes) * 100).toFixed(2);
+      progressCallback(percentage, totalBytesReceived, totalBytes);
+    });
+
+    // Return a promise that resolves with the file path
+    return new Promise((resolve, reject) => {
+      // Handle finish and error events
+      fileStream.on('finish', () => resolve(filePath));
+      fileStream.on('error', reject);
+    });
+  } catch (error) {
+    console.error('Error downloading video using GramJS:', error);
+    throw error;
+  }
 }
 
 // Function to upload video to Vimeo with progress bar
@@ -172,7 +215,7 @@ async function cutVideo(inputPath, outputPath, startTime, endTime) {
     }
 }
 
-async function processUpload(ctx, bot, userSettings, promptSendVideo) {
+async function processUpload(ctx, bot, mtprotoApi, client, userSettings, promptSendVideo) {
     const userId = getUserId(ctx);
     const chatId = ctx.chat.id;
     const userSetting = userSettings[userId];
@@ -187,7 +230,7 @@ async function processUpload(ctx, bot, userSettings, promptSendVideo) {
         }
 
         // Download the video from telegram
-        const localFilePath = await downloadVideo(userSetting.videoFileId, chatId, bot, (percentage, downloadedMB, totalMB) => {
+        const localFilePath = await downloadVideo(userSetting.videoFileId, mtprotoApi, client, (percentage, downloadedMB, totalMB) => {
             const progressBar = generateProgressBar(percentage);
 
             const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB)) ? parseFloat(downloadedMB).toFixed(2) : 'N/A';
