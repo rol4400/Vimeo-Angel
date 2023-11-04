@@ -2,9 +2,13 @@ import axios from "axios";
 import "dotenv/config";
 import { Telegraf, Markup } from 'telegraf';
 import { Vimeo } from 'vimeo';
-
+import { Deta } from 'deta';
 import fs from 'fs';
 import path from 'path';
+import { promisify } from 'util';
+import { exec as execCallback } from 'child_process';
+
+const exec = promisify(execCallback);
 
 const bot = new Telegraf(process.env.BOT_TOKEN!);
 
@@ -19,11 +23,21 @@ const vimeoClient = new Vimeo(
     accessToken
   );
 
+// Deta space data storage
+const detaInstance = Deta();  //instantiate with Data Key or env DETA_PROJECT_KEY
+const configDb = detaInstance.Base("Configuration");
+
 // Store user settings
 const userSettings = {};
 
 // Define destinations
-var destinations = [[,]];
+var destinations = [];
+
+// Initialisation
+async function init () {
+    destinations = (await configDb.get("destinations")).value;
+};
+init();
 
 // Middleware to check if the user has settings
 bot.use((ctx, next) => {
@@ -56,8 +70,15 @@ bot.on('new_chat_members', (ctx) => {
     if (botJoined) {
         // Check if the chat is not already in destinations
         if (!destinations.some(dest => dest[1] === chatId.toString())) {
+            
             // Add the chat to destinations array
             destinations.push([chatName, chatId.toString()]);
+
+            // Update the databse
+            configDb.update(
+                { value: destinations },
+                "destinations",
+            );
 
             // Log the addition
             console.log(`Bot added to group: ${chatName} (ID: ${chatId})`);
@@ -77,6 +98,7 @@ bot.on('video', (ctx) => {
 
   // Save the video file id
   userSettings[userId].videoFileId = ctx.message.video.file_id;
+  userSettings[userId].videoDuration = ctx.message.video.duration;
 
   // Show settings panel
   showSettingsPanel(ctx, chatId);
@@ -126,7 +148,7 @@ bot.on('callback_query', (ctx) => {
   
     // Handle other simple actions
     switch (action) {
-      case 'edit_date':
+        case 'edit_date':
         ctx.reply('📅 Please enter the date in the format YYMMDD:',
         {
             reply_markup: {
@@ -135,8 +157,8 @@ bot.on('callback_query', (ctx) => {
             },
         },);
         break;
-  
-      case 'edit_password':
+
+        case 'edit_password':
         ctx.reply('🔐 Please enter the password:',
         {
             reply_markup: {
@@ -145,8 +167,8 @@ bot.on('callback_query', (ctx) => {
             },
         },);
         break;
-  
-      case 'edit_title':
+
+        case 'edit_title':
         ctx.reply('📝 Please enter the title:',
         {
             reply_markup: {
@@ -155,8 +177,8 @@ bot.on('callback_query', (ctx) => {
             },
         },);
         break;
-  
-      case 'edit_leader':
+
+        case 'edit_leader':
         ctx.reply('👤 Please enter the leader:',
         {
             reply_markup: {
@@ -165,44 +187,81 @@ bot.on('callback_query', (ctx) => {
             },
         },);
         break;
-  
-      case 'edit_destination':
-        ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
-          destinations.map(dest => [Markup.button.callback(`📍 ${dest[0]}`, `select_destination_${dest[1]}`)])
-        ));
-        break;
+    
+        case 'edit_destination':
+            ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
+            destinations.map(dest => [Markup.button.callback(`📍 ${dest[0]}`, `select_destination_${dest[1]}`)])
+            ));
+            break;
 
-      case 'select_different_room':
-        ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
-            destinations.map(dest => [Markup.button.callback(`📍 ${dest[0]}`, `send_to_destination_${dest[1]}`)])
-        ));
-        break;
+        case 'select_different_room':
+            ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
+                destinations.map(dest => [Markup.button.callback(`📍 ${dest[0]}`, `send_to_destination_${dest[1]}`)])
+            ));
+            break;
 
-    case 'complete':
-        // Save settings and perform necessary actions
-        // For now, just log the settings
-        console.log(`Settings for user ${userId}:`, userSettings[userId]);
+        case 'edit_start_time':
+            ctx.reply('⏰ Please enter the start time in the format hh:mm or hh:mm:ss.',
+                {
+                    reply_markup: {
+                        force_reply: true,
+                        input_field_placeholder: "Start Time",
+                    },
+                });
+            break;
 
-        processUpload(ctx);
+        case 'edit_end_time':
+            ctx.reply('⏰ Please enter the end time in the format hh:mm or hh:mm:ss.',
+                {
+                    reply_markup: {
+                        force_reply: true,
+                        input_field_placeholder: "End Time",
+                    },
+                });
+            break;
 
-        break;
+        case 'complete':
+            // Save settings and perform necessary actions
+            // For now, just log the settings
+            console.log(`Settings for user ${userId}:`, userSettings[userId]);
 
-    case 'cancel':
-        // Reset user settings
-        userSettings[userId] = {};
-        ctx.reply("Cancelled. Please send me another video when you are ready");
+            // Check if both start and end times are set
+            if (userSettings[userId].startTime !== undefined && userSettings[userId].endTime !== undefined) {
+                // Check if end time is after start time
+                if (userSettings[userId].endTime <= userSettings[userId].startTime) {
+                    ctx.reply('End time must be after start time. Please adjust your settings.');
+                    return;
+                }
 
-        break;
+                // Check if end time is within the duration of the video
+                const videoDuration = userSettings[userId].videoDuration; // You need to implement a function to get the video duration
+                if (userSettings[userId].endTime > videoDuration) {
+                    ctx.reply('End time must be within the duration of the video. Please adjust your settings.');
+                    return;
+                }
+            }
 
-    case 'send_link':
-        // Send the link to the specified destination
-        sendToDestination(ctx, userSettings[userId].destination);
-        break;
+            // Perform the upload
+            processUpload(ctx);
 
-    default:
-        console.log("DEFAULT")
-        console.log(action)
-        break;
+            break;
+
+        case 'cancel':
+            // Reset user settings
+            userSettings[userId] = {};
+            ctx.reply("Cancelled. Please send me another video when you are ready");
+
+            break;
+
+        case 'send_link':
+            // Send the link to the specified destination
+            sendToDestination(ctx, userSettings[userId].destination);
+            break;
+
+        default:
+            console.log("DEFAULT")
+            console.log(action)
+            break;
 
     }
   });
@@ -230,38 +289,52 @@ bot.on('text', (ctx) => {
 
 // Function to show the settings panel
 function showSettingsPanel(ctx, chatId) {
-  const userId = getUserId(ctx);
-  if (!userId) {
-    console.error('Unable to determine user ID');
-    return;
-  }
+    const userId = getUserId(ctx);
+    if (!userId) {
+        console.error('Unable to determine user ID');
+        return;
+    }
 
-  const userSetting = userSettings[userId];
+    const userSetting = userSettings[userId];
 
-  const destinationName = destinations.find(([_, id]) => id === userSetting.destination)?.[0];
+    const destinationName = destinations.find(([_, id]) => id === userSetting.destination)?.[0];
 
-  // Check if a video is being uploaded
+    // Include information about start and end times
+    const timeInfo = userSetting.startTime && userSetting.endTime
+        ? `\n⏰ Start Time: ${formatTime(userSetting.startTime)}\n⏰ End Time: ${formatTime(userSetting.endTime)}`
+        : userSetting.startTime
+            ? `\n⏰ Start Time: ${formatTime(userSetting.startTime)}`
+            : userSetting.endTime
+                ? `\n⏰ End Time: ${formatTime(userSetting.endTime)}`
+                : '';
+
+    // The title of the message
     const uploadingVideoMessage = userSetting.videoFileId
-    ? `📹 Uploading Video: ${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
+    ? `📹 Video: ${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
     : '🚫 No video uploaded yet. Please upload a video to start.';
 
-  ctx.reply(uploadingVideoMessage, Markup.inlineKeyboard([
-    [
-      Markup.button.callback('📅 Edit Date', 'edit_date'),
-      Markup.button.callback('🔐 Edit Password', 'edit_password'),
-    ],
-    [
-      Markup.button.callback('📝 Edit Title', 'edit_title'),
-      Markup.button.callback('👤 Edit Leader', 'edit_leader'),
-    ],
-    [
-      Markup.button.callback('🌍 Edit Destination', 'edit_destination'),
-    ],
-    [
-      Markup.button.callback('✅ Complete', 'complete'),
-      Markup.button.callback('❌ Cancel', 'cancel'),
-    ],
-  ]));
+    // Generate the buttons
+    ctx.reply(uploadingVideoMessage, Markup.inlineKeyboard([
+        [
+            Markup.button.callback('📅 Edit Date', 'edit_date'),
+            Markup.button.callback('🔐 Edit Password', 'edit_password'),
+        ],
+        [
+            Markup.button.callback('📝 Edit Title', 'edit_title'),
+            Markup.button.callback('👤 Edit Leader', 'edit_leader'),
+        ],
+        [
+            Markup.button.callback('⏰ Edit Start Time', 'edit_start_time'),
+            Markup.button.callback('⏰ Edit End Time', 'edit_end_time'),
+        ],
+        [
+            Markup.button.callback('🌍 Edit Destination', 'edit_destination'),
+        ],
+        [
+            Markup.button.callback('✅ Complete', 'complete'),
+            Markup.button.callback('❌ Cancel', 'cancel'),
+        ],
+    ]));
 }
 
 // Function to handle setting inputs
@@ -280,31 +353,6 @@ function handleSettingInput(ctx, userId, input) {
 
      // Handle specific setting inputs
      updateSetting(ctx, userId, lowercaseInput, match);
-
-    // switch (lowercaseInput) {
-    //     case 'complete':
-    //         // Save settings and perform necessary actions
-    //         // For now, just log the settings
-    //         console.log(`Settings for user ${userId}:`, userSettings[userId]);
-
-    //         processUpload(ctx, 5);
-
-    //         // Reset user settings
-    //         userSettings[userId] = {};
-
-    //         break;
-
-    //     case 'cancel':
-    //         // Reset user settings
-    //         userSettings[userId] = {};
-    //         ctx.reply("Upload has been cancelled. Please send me another video when you are ready");
-
-    //         break;
-
-    //     default:
-           
-    //         break;
-// }
     
 }
 
@@ -361,11 +409,81 @@ function updateSetting(ctx, userId, input, match) {
                 showSettingsPanel(ctx, ctx.message.chat.id);
                 break;
 
+            case 'start':
+                // Validate and update the start time setting
+                const startTime = parseTime(input);
+
+                if (startTime !== null) {
+                    userSetting.startTime = startTime;
+                    showSettingsPanel(ctx, ctx.message.chat.id);
+                } else {
+                    ctx.reply('Invalid start time. Please enter a valid time in the format hh:mm or hh:mm:ss.');
+                    ctx.reply('⏰ Please enter the start time:',
+                        {
+                            reply_markup: {
+                                force_reply: true,
+                                input_field_placeholder: "Start Time",
+                            },
+                        });
+                }
+                break;
+
+            case 'end':
+                // Validate and update the end time setting
+                const endTime = parseTime(input);
+
+                if (endTime !== null) {
+                    userSetting.endTime = endTime;
+                    showSettingsPanel(ctx, ctx.message.chat.id);
+                } else {
+                    ctx.reply('Invalid end time. Please enter a valid time in the format hh:mm or hh:mm:ss.');
+                    ctx.reply('⏰ Please enter the end time:',
+                        {
+                            reply_markup: {
+                                force_reply: true,
+                                input_field_placeholder: "End Time",
+                            },
+                        });
+                }
+                break;
+
             default:
                 // Handle other settings if needed
                 break;
         }
     }
+}
+
+// Function to parse time in hh:mm or hh:mm:ss format
+function parseTime(input) {
+    const timeRegex = /^(?:(\d{1,2}):)?([0-5]?\d)(?::([0-5]?\d))?$/;
+    const match = input.match(timeRegex);
+
+    if (match) {
+        const hours = parseInt(match[1]) || 0;
+        const minutes = parseInt(match[2]) || 0;
+        const seconds = parseInt(match[3]) || 0;
+
+        return hours * 3600 + minutes * 60 + seconds;
+    }
+
+    console.log("Couldn't match a time in hh:mm:ss or hh:mm format");
+
+    return null;
+}
+
+// Function to format time in hh:mm:ss format
+function formatTime(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+
+    return `${padZero(hours)}:${padZero(minutes)}:${padZero(remainingSeconds)}`;
+}
+
+// Function to pad zero for single-digit numbers
+function padZero(num) {
+    return num.toString().padStart(2, '0');
 }
 
 // Store message IDs and chat IDs for progress bars
@@ -495,6 +613,30 @@ async function setPrivacySettings(videoId, password) {
     });
 }
 
+// Function to cut the video using ffmpeg
+async function cutVideo(inputPath, outputPath, startTime, endTime) {
+    try {
+        let command = `ffmpeg -i ${inputPath}`;
+
+        if (startTime !== undefined) {
+            command += ` -ss ${startTime}`;
+        }
+
+        if (endTime !== undefined) {
+            command += ` -to ${endTime}`;
+        }
+
+        command += ` ${outputPath}`;
+
+        await exec(command);
+        console.log('Video cut successfully:', outputPath);
+        return outputPath;
+    } catch (error) {
+        console.error('Error processing video:', error);
+        throw error;
+    }
+}
+
 async function processUpload(ctx) {
     const userId = getUserId(ctx);
     const chatId = ctx.chat.id;
@@ -502,8 +644,6 @@ async function processUpload(ctx) {
 
     let progressMessage;
 
-    promptSendVideo(ctx);
-    return;
     try {
         // Check if progress message has been sent
         if (!progressBars[chatId] || !progressBars[chatId].message_id) {
@@ -521,8 +661,16 @@ async function processUpload(ctx) {
         });
         console.log('Video downloaded successfully:', localFilePath);
 
+        // Cut the video based on start and end times
+        const storagePath = path.join(__dirname, '..', 'video_store');
+        const outputPath = `${storagePath}/${userSetting.videoFileId}_cut.mp4`;
+
+        updateProgressMessage(chatId, progressBars[chatId].message_id, "Processing video...");
+        await cutVideo(localFilePath, outputPath, userSetting.startTime, userSetting.endTime);
+        console.log('Video cut successfully:', outputPath);
+
         // Upload the video to vimeo
-        const vimeoUri = await uploadToVimeo(localFilePath, userId, chatId, (percentage, uploadedMB, totalMB) => {
+        const vimeoUri = await uploadToVimeo(outputPath, userId, chatId, (percentage, uploadedMB, totalMB) => {
             const progressBar = generateProgressBar(percentage);
 
             const uploadedMBFormatted = !isNaN(parseFloat(uploadedMB)) ? parseFloat(uploadedMB).toFixed(2) : 'N/A';
@@ -530,8 +678,8 @@ async function processUpload(ctx) {
         });
 
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
-        ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage/${vimeoUri}`);
-        userSetting.vimeoLink = `https://vimeo.com/manage/${vimeoUri}`;
+        await ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage${vimeoUri}`);
+        userSetting.vimeoLink = `https://vimeo.com/manage${vimeoUri}`;
 
         // Prompt user to send the link to the designated chatroom
         promptSendVideo(ctx);
@@ -542,6 +690,8 @@ async function processUpload(ctx) {
     } catch (error) {
         console.error('Error processing video:', error);
         ctx.reply('Error processing video. Please try again later.');
+
+        //TODO: Deletion here
     }
 
     // Simulate additional processing time
@@ -578,6 +728,15 @@ async function processUpload(ctx) {
 
 // Function to prompt where to send the video
 function promptSendVideo(ctx) {
+    const userId = getUserId(ctx);
+    
+    if (!userId || !userSettings[userId]) {
+        console.error('Unable to determine user ID or user settings');
+        return;
+    }
+
+    const destinationExists = userSettings[userId].destination !== undefined;
+
     // Prompt user to send the link to the designated chatroom
     const sendLinkOptions = Markup.inlineKeyboard([
         [
@@ -589,8 +748,24 @@ function promptSendVideo(ctx) {
         ]
     ]);
 
-    ctx.replyWithMarkdown('Send the Vimeo link to the designated chatroom?', sendLinkOptions);
+    const keyboardOptions = destinationExists
+        ? sendLinkOptions
+        : Markup.inlineKeyboard([
+            [
+                Markup.button.callback('Select Another Room', 'select_different_room'),
+            ],
+            [
+                Markup.button.callback('❌ Cancel', 'cancel'),
+            ]
+        ]);
+
+    const message = destinationExists
+        ? 'Send the Vimeo link to the designated chatroom?'
+        : 'Do you want to send the link to a chatroom?.';
+
+    ctx.replyWithMarkdown(message, keyboardOptions);
 }
+
 
 function sendToDestination(ctx, chatId) {
 

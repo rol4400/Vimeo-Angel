@@ -11,8 +11,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "axios": "^1.6.0",
+    "deta": "^2.0.0",
     "dotenv": "^16.3.1",
+    "ffmpeg-installer": "^1.0.2",
+    "fluent-ffmpeg": "^2.1.2",
     "telegraf": "^4.15.0",
     "vimeo": "^2.3.1"
   },
