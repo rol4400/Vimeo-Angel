@@ -2,38 +2,47 @@ import { Telegraf, Markup } from 'telegraf';
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
 import { processUpload } from "./uploader"
-import { getPhoneCode, savePhoneCode } from "./mtproto"
+import { requestCode, setCode, checkAuthenticated } from "./mtproto"
 
 import "dotenv/config.js";
 
-const bot = new Telegraf(process.env.BOT_TOKEN!);
+const bot = new Telegraf(process.env.BOT_TOKEN!, {
+    telegram: {
+      apiRoot: 'http://127.0.0.1:8081'
+    }
+  });
 
 // Deta space data storage
 const detaInstance = Deta();  //instantiate with Data Key or env DETA_PROJECT_KEY
 const configDb = detaInstance.Base("Configuration");
 
-// Telegram MTPROTO API Configuration
-import { Api, TelegramClient } from 'telegram';
-import { StringSession } from 'telegram/sessions';
-import { config } from 'dotenv';
-
-const apiId = parseInt(process.env.TELE_API_ID!);
-const apiHash = process.env.TELE_API_HASH!;
-const session = new StringSession(process.env.TELE_STR_SESSION);
+// // Telegram MTPROTO API Configuration
+// import { Api, TelegramClient } from 'telegram';
+// import { StringSession } from 'telegram/sessions';
 
 // Store the user MTPROTO telegram clients for auth purposes
-var userClients = {}
+let sessions;
+var userClients = {
+    sessions, // Store the session strings for telegram mtproto auth
+    clients: [{}] // Store the active clients
+}
 
-// Store user settings
+// Store user settings that have been applied to each video
 const userSettings = {};
 
-// Define destinations
+// Define destinations to send messages to
 var destinations;
 
 // Initialisation
 async function init() {
-    const result = await configDb.get("destinations");
-    destinations = (result && result.value) || [["",""]];
+
+    // Populate the destinations array
+    const resultDestination = await configDb.get("destinations");
+    destinations = (resultDestination && resultDestination.value);
+
+    // Populate the userClients array
+    const resultUsers = await configDb.get("users");
+    userClients.sessions = (resultUsers && resultUsers.value) || [{}];
 }
 init();
 
@@ -54,10 +63,7 @@ bot.use((ctx, next) => {
 
 // Start command handler
 bot.start((ctx) => {
-  ctx.reply('Welcome! Please upload a video file to start.');
-});
 
-bot.command('authenticate', async (ctx) => {
     const userId = getUserId(ctx);
   
     if (!userId) {
@@ -65,17 +71,44 @@ bot.command('authenticate', async (ctx) => {
       return;
     }
 
-    userClients[userId] = new TelegramClient(session, apiId, apiHash, {})
+    if (userClients.clients[userId] == null) {
+        userClients.clients[userId] = checkAuthenticated(userClients, userId);
+        ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
+        ctx.reply("Please give them this code: " + userId);
+        return;
+    }
+
+    ctx.reply('Welcome! Please upload a video file to start.');
+});
+
+// bot.command('authenticate', async (ctx) => {
+//     const userId = getUserId(ctx);
   
-    // Prompt the user to enter their phone number
-    ctx.reply('📞 Please enter the phone number of this device (e.g. +61499 xxx xxx):',
-    {
-        reply_markup: {
-            force_reply: true,
-            input_field_placeholder: "Please use international format (e.g. +61499 xxx xxx)",
-        },
-    },);
-});  
+//     if (!userId) {
+//       console.error('Unable to determine user ID');
+//       return;
+//     }
+
+//     // const sessionString = userClients[userId] = client;
+//     // const session = new StringSession(sessionString);
+//     // var client = new TelegramClient(session, apiId, apiHash, {})
+
+//     // await client.connect();
+
+//     // await userClients[userId].sendCode("+61499561660").catch((error) => {
+//     //     console.error('Error during phone code request:', error);
+//     // });
+    
+  
+//     // Prompt the user to enter their phone number
+//     ctx.reply('📞 Please enter the phone number of this device (e.g. +61499 xxx xxx):',
+//     {
+//         reply_markup: {
+//             force_reply: true,
+//             input_field_placeholder: "Please use international format (e.g. +61499 xxx xxx)",
+//         },
+//     },);
+// });  
 
 // Function to handle new members (including the bot) joining a chat
 bot.on('new_chat_members', (ctx) => {
@@ -112,6 +145,14 @@ bot.on('video', (ctx) => {
     return;
   }
 
+  // If there's no authenticated telegram client generated already, authenticate and generate a new one
+  userClients.clients[userId] = checkAuthenticated(userClients, userId);
+  if (userClients.clients[userId] == null) {
+      ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
+      ctx.reply("Please give them this code: " + userId);
+      return;
+  }
+
   const chatId = ctx.message.chat.id;
 
   // Save the video file id
@@ -128,6 +169,14 @@ bot.on('callback_query', (ctx) => {
     if (!userId) {
       console.error('Unable to determine user ID');
       return;
+    }
+
+    // If there's no authenticated telegram client generated already, authenticate and generate a new one
+    userClients.clients[userId] = checkAuthenticated(userClients, userId);
+    if (userClients.clients[userId] == null) {
+        ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
+        ctx.reply("Please give them this code: " + userId);
+        return;
     }
   
     // Use type assertion to tell TypeScript that data exists
@@ -260,7 +309,9 @@ bot.on('callback_query', (ctx) => {
             }
 
             // Perform the upload
-            processUpload(ctx, bot, Api, client, userSettings, promptSendVideo);
+            console.log("Client");
+            console.log(userClients.clients[userId]);
+            processUpload(ctx, bot, userClients.clients[userId], userSettings, promptSendVideo);
 
             break;
 
@@ -292,9 +343,16 @@ bot.on('text', (ctx) => {
         console.error('Unable to determine user ID');
         return;
     }
+    
+    // If there's no authenticated telegram client generated already, authenticate and generate a new one
+    userClients.clients[userId] = checkAuthenticated(userClients, userId);
+    if (userClients.clients[userId] == null) {
+        ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
+        ctx.reply("Please give them this code: " + userId);
+        return;
+    }
 
-    var authenticated = false;
-    if (!userSettings[userId].videoFileId && authenticated) {
+    if (!userSettings[userId].videoFileId) {
         ctx.reply("Please upload a video file here before I can do anything");
         return;
     }
@@ -357,7 +415,7 @@ function showSettingsPanel(ctx, chatId) {
 }
 
 // Function to handle setting inputs
-function handleSettingInput(ctx, userId, input) {
+async function handleSettingInput(ctx, userId, input) {
     const lowercaseInput = ctx.update.message.text;
 
     // Check if the message is a premature reply
@@ -371,12 +429,12 @@ function handleSettingInput(ctx, userId, input) {
     console.log(match);
 
      // Handle specific setting inputs
-     updateSetting(ctx, userId, lowercaseInput, match);
+     await updateSetting(ctx, userId, lowercaseInput, match);
     
 }
 
 // Function to update specific settings
-function updateSetting(ctx, userId, input, match) {
+async function updateSetting(ctx, userId, input, match) {
     const userSetting = userSettings[userId];
 
     // Determine which setting to update based on the context
@@ -388,8 +446,8 @@ function updateSetting(ctx, userId, input, match) {
                 // Store the phone number
                 userSetting.phoneNumber = input;
 
-                // Send the 2FA code
-                getPhoneCode(userClients[userId], input);
+                // Start the auth process and request a code for the given phone number
+                requestCode(input);
 
                 // Ask for the 2FA code
                 ctx.reply('🔒 Please enter the 2fa authentication code. It will soon be sent to you on telegram (be patient 🙂)',
@@ -404,7 +462,7 @@ function updateSetting(ctx, userId, input, match) {
 
             case '2fa':
                 // Try the 2FA code and store the session
-                savePhoneCode(configDb, userClients[userId], input)
+                setCode(configDb, input)
                 break;
                 
             case 'date':

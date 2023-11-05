@@ -4,6 +4,7 @@ import { exec as execCallback } from 'child_process';
 import { getUserId } from './helpers';
 import fs from 'fs';
 import path, { resolve } from 'path';
+import { TelegramClient } from 'telegram';
 
 const exec = promisify(execCallback);
 
@@ -59,18 +60,11 @@ const progressBars = {};
 //     }
 // }
 
-async function downloadVideo(fileId, mtprotoApi, client, progressCallback) {
+async function downloadVideo(fileId, client, progressCallback) {
   try {
-    // Get the input location
-    const location = new mtprotoApi.InputDocumentFileLocation({
-      id: fileId.id,
-      accessHash: fileId.accessHash,
-      fileReference: fileId.fileReference,
-      thumbSize: '',
-    });
 
     // Download the file
-    const downloadedFile = await client.downloadFile(location, {});
+    const downloadedFile = await client.downloadMedia(fileId);
 
     // File handling logic
     const storagePath = path.join(__dirname, '..', 'video_store');
@@ -99,7 +93,7 @@ async function downloadVideo(fileId, mtprotoApi, client, progressCallback) {
       fileStream.on('error', reject);
     });
   } catch (error) {
-    console.error('Error downloading video using GramJS:', error);
+    console.error('Error downloading video:', error);
     throw error;
   }
 }
@@ -215,7 +209,7 @@ async function cutVideo(inputPath, outputPath, startTime, endTime) {
     }
 }
 
-async function processUpload(ctx, bot, mtprotoApi, client, userSettings, promptSendVideo) {
+async function processUpload(ctx, bot, client, userSettings, promptSendVideo) {
     const userId = getUserId(ctx);
     const chatId = ctx.chat.id;
     const userSetting = userSettings[userId];
@@ -230,7 +224,7 @@ async function processUpload(ctx, bot, mtprotoApi, client, userSettings, promptS
         }
 
         // Download the video from telegram
-        const localFilePath = await downloadVideo(userSetting.videoFileId, mtprotoApi, client, (percentage, downloadedMB, totalMB) => {
+        const localFilePath = await downloadVideo(userSetting.videoFileId, client, (percentage, downloadedMB, totalMB) => {
             const progressBar = generateProgressBar(percentage);
 
             const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB)) ? parseFloat(downloadedMB).toFixed(2) : 'N/A';

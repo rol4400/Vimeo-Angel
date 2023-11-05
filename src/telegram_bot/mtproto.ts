@@ -9,7 +9,6 @@ const apiId = parseInt(process.env.TELE_API_ID!);
 const apiHash = process.env.TELE_API_HASH!;
 const session = new StringSession("");
 
-// Create a promise for use in prompting the user for 2FA phone codes
 let globalPhoneCodePromise:any
 function generatePromise() {
     let resolve
@@ -22,47 +21,80 @@ function generatePromise() {
     return { resolve, reject, promise }
 }
 
-// Request a 2fa code and create a promise to catch when the code is given
-async function getPhoneCode(client, phoneNumber) {
-    globalPhoneCodePromise = generatePromise();
-    // client = new TelegramClient(session, apiId, apiHash, {
-    //     connectionRetries: 5,
-    // });
+let teleClient;
+
+function generateClient(phoneNumber, session) {
+    var client = new TelegramClient(session, apiId, apiHash, {
+        connectionRetries: 5,
+    });
+
+    client.connect();
+
+    return client;
+}
+
+
+function checkAuthenticated (userClients, userId) {
+
+
+    // Skip all this if we're already authenticated
+    if (userClients.clients[userId] != null) { return userClients.clients[userId];}
+
+    // Account for null sessions
+    if (userClients.sessions == undefined) { return null; }
+
+    // Check we have a hash code
+    const userData = userClients.sessions.find((user) => {
+        return user.id == userId;
+    });
 
     try {
-        await client.start({
-            phoneNumber: async () => phoneNumber,
-            phoneCode: async () => {
-                let code = await globalPhoneCodePromise.promise;
+        if (userData.hash != "") {
+            const session = new StringSession(userData.session)
+            var client = generateClient(userData.phoneNumber, session)
+            console.log(1); console.log(client);
+            return client; // Success, we are authenticated. Send back the client
 
-                // Generate a new promise for the next code entry
-                globalPhoneCodePromise = generatePromise();
-
-                return code;
-            },
-            onError: (err: any) => {
-                console.error('Error during authentication:', err);
-                // Handle the error appropriately (logging, messaging the user, etc.)
-                // You might want to reject the promise here
-                globalPhoneCodePromise.reject(err);
-            },
-        });
+        }
     } catch (error) {
-        // Handle start errors (e.g., network issues, invalid API credentials)
-        console.error('Error starting the Telegram client:', error);
+        // Client generation failed, so the authentication given is invalid
+        return null;
     }
 }
 
-async function savePhoneCode(configDb, client, phoneNumber) {
-    try {
-        globalPhoneCodePromise.resolve(phoneNumber);
-        // await client.start();
-        configDb.put({ phone: phoneNumber, session: client.session.save() });
-    } catch (error) {
-        console.error('Error saving phone code:', error);
-        // Handle the error appropriately (logging, messaging the user, etc.)
-        // You might want to reject the promise here
-        globalPhoneCodePromise.reject(error);
-    }
+function requestCode(phoneNumber) {
+
+    globalPhoneCodePromise = generatePromise()
+    teleClient = new TelegramClient(session, apiId, apiHash, {
+        connectionRetries: 5,
+    });
+    teleClient.start({
+        phoneNumber: async () =>phoneNumber,
+        phoneCode: async () => {
+            let code = await globalPhoneCodePromise.promise
+
+            // In case the user provided a wrong code, gram.js will try to call this function again
+            // We generate a new promise here to allow user enter a new code later
+            globalPhoneCodePromise = generatePromise()
+
+            return code
+        },
+        onError: (err:any) => console.log(err),
+    })
 }
-export {getPhoneCode, savePhoneCode}
+
+function setCode(configDb, phoneCode) {
+    
+    globalPhoneCodePromise.resolve(phoneCode);
+
+
+    // Save the session
+    // configDb.put({ phone: teleClient._phone, session: teleClient.session.save() });
+
+    // Close the client after completing the authentication process
+    // client.close();
+}
+
+
+
+export { requestCode, setCode, checkAuthenticated }
