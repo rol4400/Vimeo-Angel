@@ -4,7 +4,7 @@ import { exec as execCallback } from 'child_process';
 import { getUserId } from './helpers';
 import fs from 'fs';
 import path, { resolve } from 'path';
-import { TelegramClient } from 'telegram';
+import Bottleneck from 'bottleneck';
 
 const exec = promisify(execCallback);
 
@@ -60,43 +60,43 @@ const progressBars = {};
 //     }
 // }
 
-async function downloadVideo(fileId, client, progressCallback) {
-  try {
+// Function to download video by file_id with progress bar
+async function downloadVideo(fileId, bot, progressCallback) {
+    try {
+        const file = await bot.telegram.getFile(fileId);
+        const fileUrl = `http://${process.env.BOT_URI}/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+        const response = await axios({
+            url: fileUrl,
+            method: 'GET',
+            responseType: 'stream',
+            onDownloadProgress: (progressEvent) => {
+                const totalMB = progressEvent.total! / (1024 * 1024);
+                const downloadedMB = progressEvent.loaded / (1024 * 1024);
+                const percentage = ((progressEvent.loaded / progressEvent.total!) * 100).toFixed(2);
+            
+                // Check if downloadedMB is a valid number before using toFixed
+                const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB.toString())) ? parseFloat(downloadedMB.toString()).toFixed(2) : 'N/A';
+            
+                progressCallback(percentage, downloadedMBFormatted, totalMB);
+            },
+            
+        });
 
-    // Download the file
-    const downloadedFile = await client.downloadMedia(fileId);
+        const storagePath = path.join(__dirname, '..', 'video_store');
+        const filePath = `${storagePath}/${file.file_id}.mp4`;
+        const fileStream = fs.createWriteStream(filePath);
+        response.data.pipe(fileStream);
 
-    // File handling logic
-    const storagePath = path.join(__dirname, '..', 'video_store');
-    const filePath = `${storagePath}/${fileId.id}.mp4`;
-    const fileStream = fs.createWriteStream(filePath);
-
-    // Variables for progress tracking
-    let totalBytesReceived = 0;
-    const totalBytes = downloadedFile.bytes.data.length;
-
-    // Write the file content to the stream
-    fileStream.write(downloadedFile.bytes.data);
-
-    // Handle progress
-    fileStream.on('data', (chunk) => {
-      totalBytesReceived += chunk.length;
-
-      const percentage = ((totalBytesReceived / totalBytes) * 100).toFixed(2);
-      progressCallback(percentage, totalBytesReceived, totalBytes);
-    });
-
-    // Return a promise that resolves with the file path
-    return new Promise((resolve, reject) => {
-      // Handle finish and error events
-      fileStream.on('finish', () => resolve(filePath));
-      fileStream.on('error', reject);
-    });
-  } catch (error) {
-    console.error('Error downloading video:', error);
-    throw error;
-  }
+        return new Promise((resolve, reject) => {
+            fileStream.on('finish', () => resolve(filePath));
+            fileStream.on('error', reject);
+        });
+    } catch (error) {
+        console.error('Error downloading video:', error);
+        throw error;
+    }
 }
+
 
 // Function to upload video to Vimeo with progress bar
 async function uploadToVimeo(localFilePath, userId, userSettings, progressCallback) {
@@ -187,6 +187,9 @@ async function setPrivacySettings(videoId, password) {
 
 // Function to cut the video using ffmpeg
 async function cutVideo(inputPath, outputPath, startTime, endTime) {
+
+    if (startTime === undefined && endTime === undefined) return inputPath;
+
     try {
         let command = `ffmpeg -i ${inputPath}`;
 
@@ -209,7 +212,7 @@ async function cutVideo(inputPath, outputPath, startTime, endTime) {
     }
 }
 
-async function processUpload(ctx, bot, client, userSettings, promptSendVideo) {
+async function processUpload(ctx, bot, userSettings, promptSendVideo) {
     const userId = getUserId(ctx);
     const chatId = ctx.chat.id;
     const userSetting = userSettings[userId];
@@ -224,25 +227,29 @@ async function processUpload(ctx, bot, client, userSettings, promptSendVideo) {
         }
 
         // Download the video from telegram
-        const localFilePath = await downloadVideo(userSetting.videoFileId, client, (percentage, downloadedMB, totalMB) => {
-            const progressBar = generateProgressBar(percentage);
+        // const localFilePath = await downloadVideo(userSetting.videoFileId, bot, (percentage, downloadedMB, totalMB) => {
+        //     const progressBar = generateProgressBar(percentage);
 
-            const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB)) ? parseFloat(downloadedMB).toFixed(2) : 'N/A';
-            updateProgressMessage(chatId, bot, progressBars[chatId].message_id, `Downloading... ${percentage}% (${downloadedMBFormatted} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
+        //     const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB)) ? parseFloat(downloadedMB).toFixed(2) : 'N/A';
+        //     updateProgressMessage(chatId, bot, progressBars[chatId].message_id, `Downloading... ${percentage}% (${downloadedMBFormatted} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
            
-        });
-        console.log('Video downloaded successfully:', localFilePath);
+        // });
+        // console.log('Video downloaded successfully:', localFilePath);
+
+        const file = await bot.telegram.getFile(userSetting.videoFileId);
+        const inputStoragePath = path.join(__dirname, '..', '..', 'telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
+        const inputPath = `${file.file_path}`;
 
         // Cut the video based on start and end times
-        const storagePath = path.join(__dirname, '..', 'video_store');
-        const outputPath = `${storagePath}/${userSetting.videoFileId}_cut.mp4`;
-
+        const outputStoragePath = path.join(__dirname, '..', 'video_store');
+        const outputPath = `${outputStoragePath}\\${userSetting.videoFileId}_cut.mp4`;
+        
         updateProgressMessage(chatId, bot, progressBars[chatId].message_id, "Processing video...");
-        await cutVideo(localFilePath, outputPath, userSetting.startTime, userSetting.endTime);
+        const resultPath = await cutVideo(inputPath, outputPath, userSetting.startTime, userSetting.endTime);
         console.log('Video cut successfully:', outputPath);
 
         // Upload the video to vimeo
-        const vimeoUri = await uploadToVimeo(outputPath, userId, userSettings, (percentage, uploadedMB, totalMB) => {
+        const vimeoUri = await uploadToVimeo(resultPath, userId, userSettings, async (percentage, uploadedMB, totalMB) => {
             const progressBar = generateProgressBar(percentage);
 
             const uploadedMBFormatted = !isNaN(parseFloat(uploadedMB)) ? parseFloat(uploadedMB).toFixed(2) : 'N/A';
@@ -264,6 +271,7 @@ async function processUpload(ctx, bot, client, userSettings, promptSendVideo) {
         ctx.reply('Error processing video. Please try again later.');
 
         //TODO: Deletion here
+        return;
     }
     
     // Edit the final message indicating completion
@@ -283,7 +291,7 @@ function generateProgressBar(progress) {
         return 'Invalid progress value';
     }
 
-    const barLength = 20;
+    const barLength = 15;
     const completed = Math.round(barLength * (numericProgress / 100));
     const remaining = barLength - completed;
 
@@ -294,19 +302,28 @@ function generateProgressBar(progress) {
 
 
 // Function to update progress message using editMessageText
+let lastUpdateTimestamp = 0;
+let minIntervalMs = 350;
 async function updateProgressMessage(chatId, bot, messageId, text) {
     try {
-        if (!progressBars[chatId]) {
-            progressBars[chatId] = {};
-        }
+        const currentTime = Date.now();
 
-        if (progressBars[chatId].message_id) {
-            // If message_id is defined, edit the existing message
-            await bot.telegram.editMessageText(chatId, progressBars[chatId].message_id, null!, text);
-        } else {
-            // If message_id is undefined, send a new message and store the message ID
-            const newMessage = await bot.telegram.sendMessage(chatId, text);
-            progressBars[chatId].message_id = newMessage.message_id;
+        // Check if the minimum interval has passed since the last update
+        if (currentTime - lastUpdateTimestamp >= minIntervalMs) {
+            lastUpdateTimestamp = currentTime;
+
+            if (!progressBars[chatId]) {
+                progressBars[chatId] = {};
+            }
+
+            if (progressBars[chatId].message_id) {
+                // If message_id is defined, edit the existing message
+                await bot.telegram.editMessageText(chatId, progressBars[chatId].message_id, null!, text);
+            } else {
+                // If message_id is undefined, send a new message and store the message ID
+                const newMessage = await bot.telegram.sendMessage(chatId, text);
+                progressBars[chatId].message_id = newMessage.message_id;
+            }
         }
     } catch (error) {
         console.error('Error updating progress message:', error);

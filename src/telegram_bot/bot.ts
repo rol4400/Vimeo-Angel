@@ -2,13 +2,13 @@ import { Telegraf, Markup } from 'telegraf';
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
 import { processUpload } from "./uploader"
-import { requestCode, setCode, checkAuthenticated } from "./mtproto"
+import { requestCode, setCode } from "./mtproto"
 
 import "dotenv/config.js";
 
 const bot = new Telegraf(process.env.BOT_TOKEN!, {
     telegram: {
-      apiRoot: 'http://127.0.0.1:8081'
+      apiRoot: `http://${process.env.BOT_URI}`
     }
   });
 
@@ -21,11 +21,7 @@ const configDb = detaInstance.Base("Configuration");
 // import { StringSession } from 'telegram/sessions';
 
 // Store the user MTPROTO telegram clients for auth purposes
-let sessions;
-var userClients = {
-    sessions, // Store the session strings for telegram mtproto auth
-    clients: [{}] // Store the active clients
-}
+let userClients;
 
 // Store user settings that have been applied to each video
 const userSettings = {};
@@ -42,7 +38,7 @@ async function init() {
 
     // Populate the userClients array
     const resultUsers = await configDb.get("users");
-    userClients.sessions = (resultUsers && resultUsers.value) || [{}];
+    userClients = (resultUsers && resultUsers.value) || [{}];
 }
 init();
 
@@ -71,15 +67,25 @@ bot.start((ctx) => {
       return;
     }
 
-    if (userClients.clients[userId] == null) {
-        userClients.clients[userId] = checkAuthenticated(userClients, userId);
-        ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
-        ctx.reply("Please give them this code: " + userId);
-        return;
-    }
+    if (!checkAuthenticated(ctx, userId)) { return; }
 
     ctx.reply('Welcome! Please upload a video file to start.');
 });
+
+function checkAuthenticated(ctx, userId) {
+
+    if (userClients !== undefined) {
+        const userData = userClients.find((user) => {
+            return user.id == userId;
+        });
+    
+        if (userData) { return true; }
+    }
+
+    ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
+    ctx.reply("Please give them this code: " + userId);
+    return false;
+}
 
 // bot.command('authenticate', async (ctx) => {
 //     const userId = getUserId(ctx);
@@ -145,13 +151,7 @@ bot.on('video', (ctx) => {
     return;
   }
 
-  // If there's no authenticated telegram client generated already, authenticate and generate a new one
-  userClients.clients[userId] = checkAuthenticated(userClients, userId);
-  if (userClients.clients[userId] == null) {
-      ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
-      ctx.reply("Please give them this code: " + userId);
-      return;
-  }
+  if (!checkAuthenticated(ctx, userId)) { return; }
 
   const chatId = ctx.message.chat.id;
 
@@ -171,13 +171,7 @@ bot.on('callback_query', (ctx) => {
       return;
     }
 
-    // If there's no authenticated telegram client generated already, authenticate and generate a new one
-    userClients.clients[userId] = checkAuthenticated(userClients, userId);
-    if (userClients.clients[userId] == null) {
-        ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
-        ctx.reply("Please give them this code: " + userId);
-        return;
-    }
+    if (!checkAuthenticated(ctx, userId)) { return; }
   
     // Use type assertion to tell TypeScript that data exists
     const action = (ctx.callbackQuery as any).data;
@@ -309,9 +303,7 @@ bot.on('callback_query', (ctx) => {
             }
 
             // Perform the upload
-            console.log("Client");
-            console.log(userClients.clients[userId]);
-            processUpload(ctx, bot, userClients.clients[userId], userSettings, promptSendVideo);
+            processUpload(ctx, bot, userSettings, promptSendVideo);
 
             break;
 
@@ -344,13 +336,7 @@ bot.on('text', (ctx) => {
         return;
     }
     
-    // If there's no authenticated telegram client generated already, authenticate and generate a new one
-    userClients.clients[userId] = checkAuthenticated(userClients, userId);
-    if (userClients.clients[userId] == null) {
-        ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
-        ctx.reply("Please give them this code: " + userId);
-        return;
-    }
+    if (!checkAuthenticated(ctx, userId)) { return; }
 
     if (!userSettings[userId].videoFileId) {
         ctx.reply("Please upload a video file here before I can do anything");
