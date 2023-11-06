@@ -105,11 +105,21 @@ async function uploadToVimeo(localFilePath, userId, userSettings, progressCallba
         // Get the user settings
         const userSetting = userSettings[userId];
 
+        // Format the name of the video
+        const currentDate = new Date();
+        const sYear = currentDate.getFullYear() - 1984;
+
+        const formattedDate = userSetting.date || `${sYear}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}`;
+        const leaderText = userSetting.leader ? ` (${userSetting.leader})` : '';
+
+        const name = `${formattedDate} ${userSetting.title || 'Title'}${leaderText}`;
+
+
         try {
             const videoUpload = await vimeoClient.upload(
                 localFilePath,
                 {
-                    name: `${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})`,
+                    name: name,
                     description: `Uploaded on ${new Date().toLocaleDateString()}`,
                 },
                 async function (uri) {
@@ -164,6 +174,10 @@ async function deleteLocalFile(filePath) {
 
 // Function to set privacy settings for the video on Vimeo
 async function setPrivacySettings(videoId, password) {
+
+    // Skip blank passwords and instead use the vimeo default
+    if (password === undefined) return;
+
     return new Promise((resolve, reject) => {
         vimeoClient.request({
             method: 'PATCH',
