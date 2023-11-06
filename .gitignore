@@ -2,3 +2,5 @@
 node_modules/
 
 video_store/
+
+.env
