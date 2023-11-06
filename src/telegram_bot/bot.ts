@@ -153,13 +153,15 @@ bot.on('video', (ctx) => {
 
   if (!checkAuthenticated(ctx, userId)) { return; }
 
-  const chatId = ctx.message.chat.id;
-
+  // Clear any previous videos
+  userSettings[userId] = {};
+  
   // Save the video file id
   userSettings[userId].videoFileId = ctx.message.video.file_id;
   userSettings[userId].videoDuration = ctx.message.video.duration;
-
+  
   // Show settings panel
+  const chatId = ctx.message.chat.id;
   showSettingsPanel(ctx, chatId);
 });
 
@@ -285,6 +287,11 @@ bot.on('callback_query', (ctx) => {
             // Save settings and perform necessary actions
             // For now, just log the settings
             console.log(`Settings for user ${userId}:`, userSettings[userId]);
+
+            if (userSettings[userId].title === undefined) {
+                ctx.reply('Please at minimum set a title');
+                return;
+            }
 
             // Check if both start and end times are set
             if (userSettings[userId].startTime !== undefined && userSettings[userId].endTime !== undefined) {
@@ -586,11 +593,21 @@ function sendToDestination(ctx, chatId) {
     // Get the settings for the current video
     const userId = getUserId(ctx);
     const userSetting = userSettings[userId];
+    
+    // Format the name of the video
+    const currentDate = new Date();
+    const sYear = currentDate.getFullYear() - 1984;
+
+    const formattedDate = userSetting.date || `${sYear}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}`;
+    const leaderText = userSetting.leader ? ` (${userSetting.leader})` : '';
+
+    const name = `${formattedDate} ${userSetting.title || 'Title'}${leaderText}`;
 
     // Generate the telegram message 
-    var message = `${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})
-    ${userSetting.vimeoLink}
-    Pass: ${userSetting.password}`;
+
+    var message = `${name}
+    Link: ${userSetting.vimeoLink}
+    Pass: ${userSetting.password || "******"}`;
 
     bot.telegram.sendMessage(chatId, message)
 
