@@ -52,7 +52,6 @@ function checkAuthenticated (userClients, userId) {
         if (userData.hash != "") {
             const session = new StringSession(userData.session)
             var client = generateClient(userData.phoneNumber, session)
-            console.log(1); console.log(client);
             return client; // Success, we are authenticated. Send back the client
 
         }
@@ -97,4 +96,4 @@ function setCode(configDb, phoneCode) {
 
 
 
-export { requestCode, setCode, checkAuthenticated }
+export { requestCode, setCode }
