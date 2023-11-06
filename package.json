@@ -10,7 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
     "start-prod-server": "pm2 start dist/telegram_bot/bot.js",
-    "start-api-server": "pm2 start ./td/bin/telegram-bot-api --api-hash=$(grep '^TELE_API_ID' .env) --api-id=$(grep '^TELE_API_HASH' .env) --local",
+    "start-api-server": "pm2 start ./td/bin/telegram-bot-api -- --api-hash=$(grep '^TELE_API_ID' .env) --api-id=$(grep '^TELE_API_HASH' .env) --local",
     "start-filemon": "electron src/folder_monitor/index.ts",
     "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css",
     "test-mtproto": "node ./src/telegram_bot/mtproto-test.js",
