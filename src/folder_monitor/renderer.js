@@ -1,5 +1,5 @@
 // renderer.js
-const { ipcRenderer } = window;
+const { ipcRenderer } = require('electron');
 
 // Example: Send a message to the main process
 ipcRenderer.send('renderer-message', 'Hello from the renderer process!');
