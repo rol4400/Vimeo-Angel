@@ -3,18 +3,24 @@
   "version": "1.0.0",
   "description": "For automatically managing zoom recordings and share links",
   "main": "telegram_bot/bot.js",
+  "compilerOptions": {
+    "esModuleInterop": true
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
     "start-prod-server": "pm2 start dist/telegram_bot/bot.js",
     "start-filemon": "electron src/folder_monitor/index.ts",
-    "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css"
+    "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css",
+    "test-mtproto": "node ./src/telegram_bot/mtproto-test.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@mtproto/core": "^6.3.0",
     "axios": "^1.6.0",
+    "bottleneck": "^2.19.5",
     "chokidar": "^3.5.3",
     "deta": "^2.0.0",
     "dotenv": "^16.3.1",
@@ -22,8 +28,10 @@
     "electron-dialog": "^2.0.0",
     "ffmpeg-installer": "^1.0.2",
     "fluent-ffmpeg": "^2.1.2",
+    "input": "^1.0.1",
     "tailwindcss": "^3.3.5",
     "telegraf": "^4.15.0",
+    "telegram": "^2.19.10",
     "vimeo": "^2.3.1"
   },
   "devDependencies": {

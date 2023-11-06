@@ -1,28 +1,45 @@
 import { Telegraf, Markup } from 'telegraf';
 import { Deta } from 'deta';
-
 import { getUserId, formatTime, parseTime} from "./helpers"
 import { processUpload } from "./uploader"
+import { requestCode, setCode } from "./mtproto"
 
-const bot = new Telegraf(process.env.BOT_TOKEN!);
+import "dotenv/config.js";
 
+const bot = new Telegraf(process.env.BOT_TOKEN!, {
+    telegram: {
+      apiRoot: `http://${process.env.BOT_URI}`
+    }
+  });
 
 // Deta space data storage
 const detaInstance = Deta();  //instantiate with Data Key or env DETA_PROJECT_KEY
 const configDb = detaInstance.Base("Configuration");
 
-// Store user settings
+// // Telegram MTPROTO API Configuration
+// import { Api, TelegramClient } from 'telegram';
+// import { StringSession } from 'telegram/sessions';
+
+// Store the user MTPROTO telegram clients for auth purposes
+let userClients;
+
+// Store user settings that have been applied to each video
 const userSettings = {};
 
-// Define destinations
+// Define destinations to send messages to
 var destinations;
 
 // Initialisation
 async function init() {
-    const result = await configDb.get("destinations");
-    destinations = (result && result.value) || [["",""]];
-}
 
+    // Populate the destinations array
+    const resultDestination = await configDb.get("destinations");
+    destinations = (resultDestination && resultDestination.value);
+
+    // Populate the userClients array
+    const resultUsers = await configDb.get("users");
+    userClients = (resultUsers && resultUsers.value) || [{}];
+}
 init();
 
 // Middleware to check if the user has settings
@@ -42,8 +59,62 @@ bot.use((ctx, next) => {
 
 // Start command handler
 bot.start((ctx) => {
-  ctx.reply('Welcome! Please upload a video file to start.');
+
+    const userId = getUserId(ctx);
+  
+    if (!userId) {
+      console.error('Unable to determine user ID');
+      return;
+    }
+
+    if (!checkAuthenticated(ctx, userId)) { return; }
+
+    ctx.reply('Welcome! Please upload a video file to start.');
 });
+
+function checkAuthenticated(ctx, userId) {
+
+    if (userClients !== undefined) {
+        const userData = userClients.find((user) => {
+            return user.id == userId;
+        });
+    
+        if (userData) { return true; }
+    }
+
+    ctx.reply("You are not authenticated to use this bot. Please contact an admin to undergo the authentication process");
+    ctx.reply("Please give them this code: " + userId);
+    return false;
+}
+
+// bot.command('authenticate', async (ctx) => {
+//     const userId = getUserId(ctx);
+  
+//     if (!userId) {
+//       console.error('Unable to determine user ID');
+//       return;
+//     }
+
+//     // const sessionString = userClients[userId] = client;
+//     // const session = new StringSession(sessionString);
+//     // var client = new TelegramClient(session, apiId, apiHash, {})
+
+//     // await client.connect();
+
+//     // await userClients[userId].sendCode("+61499561660").catch((error) => {
+//     //     console.error('Error during phone code request:', error);
+//     // });
+    
+  
+//     // Prompt the user to enter their phone number
+//     ctx.reply('📞 Please enter the phone number of this device (e.g. +61499 xxx xxx):',
+//     {
+//         reply_markup: {
+//             force_reply: true,
+//             input_field_placeholder: "Please use international format (e.g. +61499 xxx xxx)",
+//         },
+//     },);
+// });  
 
 // Function to handle new members (including the bot) joining a chat
 bot.on('new_chat_members', (ctx) => {
@@ -80,13 +151,17 @@ bot.on('video', (ctx) => {
     return;
   }
 
-  const chatId = ctx.message.chat.id;
+  if (!checkAuthenticated(ctx, userId)) { return; }
 
+  // Clear any previous videos
+  userSettings[userId] = {};
+  
   // Save the video file id
   userSettings[userId].videoFileId = ctx.message.video.file_id;
   userSettings[userId].videoDuration = ctx.message.video.duration;
-
+  
   // Show settings panel
+  const chatId = ctx.message.chat.id;
   showSettingsPanel(ctx, chatId);
 });
 
@@ -97,6 +172,8 @@ bot.on('callback_query', (ctx) => {
       console.error('Unable to determine user ID');
       return;
     }
+
+    if (!checkAuthenticated(ctx, userId)) { return; }
   
     // Use type assertion to tell TypeScript that data exists
     const action = (ctx.callbackQuery as any).data;
@@ -135,44 +212,44 @@ bot.on('callback_query', (ctx) => {
     // Handle other simple actions
     switch (action) {
         case 'edit_date':
-        ctx.reply('📅 Please enter the date in the format YYMMDD:',
-        {
-            reply_markup: {
-                force_reply: true,
-                input_field_placeholder: "YYMMDD",
-            },
-        },);
-        break;
+            ctx.reply('📅 Please enter the date in the format YYMMDD:',
+            {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "YYMMDD",
+                },
+            },);
+            break;
 
         case 'edit_password':
-        ctx.reply('🔐 Please enter the password:',
-        {
-            reply_markup: {
-                force_reply: true,
-                input_field_placeholder: "Password",
-            },
-        },);
-        break;
+            ctx.reply('🔐 Please enter the password:',
+            {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "Password",
+                },
+            },);
+            break;
 
         case 'edit_title':
         ctx.reply('📝 Please enter the title:',
-        {
-            reply_markup: {
-                force_reply: true,
-                input_field_placeholder: "Education Title",
-            },
-        },);
-        break;
+            {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "Education Title",
+                },
+            },);
+            break;
 
         case 'edit_leader':
-        ctx.reply('👤 Please enter the leader:',
-        {
-            reply_markup: {
-                force_reply: true,
-                input_field_placeholder: "Education Leader Name & Title",
-            },
-        },);
-        break;
+            ctx.reply('👤 Please enter the leader:',
+            {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "Education Leader Name & Title",
+                },
+            },);
+            break;
     
         case 'edit_destination':
             ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
@@ -210,6 +287,11 @@ bot.on('callback_query', (ctx) => {
             // Save settings and perform necessary actions
             // For now, just log the settings
             console.log(`Settings for user ${userId}:`, userSettings[userId]);
+
+            if (userSettings[userId].title === undefined) {
+                ctx.reply('Please at minimum set a title');
+                return;
+            }
 
             // Check if both start and end times are set
             if (userSettings[userId].startTime !== undefined && userSettings[userId].endTime !== undefined) {
@@ -260,6 +342,8 @@ bot.on('text', (ctx) => {
         console.error('Unable to determine user ID');
         return;
     }
+    
+    if (!checkAuthenticated(ctx, userId)) { return; }
 
     if (!userSettings[userId].videoFileId) {
         ctx.reply("Please upload a video file here before I can do anything");
@@ -324,7 +408,7 @@ function showSettingsPanel(ctx, chatId) {
 }
 
 // Function to handle setting inputs
-function handleSettingInput(ctx, userId, input) {
+async function handleSettingInput(ctx, userId, input) {
     const lowercaseInput = ctx.update.message.text;
 
     // Check if the message is a premature reply
@@ -338,12 +422,12 @@ function handleSettingInput(ctx, userId, input) {
     console.log(match);
 
      // Handle specific setting inputs
-     updateSetting(ctx, userId, lowercaseInput, match);
+     await updateSetting(ctx, userId, lowercaseInput, match);
     
 }
 
 // Function to update specific settings
-function updateSetting(ctx, userId, input, match) {
+async function updateSetting(ctx, userId, input, match) {
     const userSetting = userSettings[userId];
 
     // Determine which setting to update based on the context
@@ -351,6 +435,29 @@ function updateSetting(ctx, userId, input, match) {
         const setting = match[1];
 
         switch (setting) {
+            case 'phone':
+                // Store the phone number
+                userSetting.phoneNumber = input;
+
+                // Start the auth process and request a code for the given phone number
+                requestCode(input);
+
+                // Ask for the 2FA code
+                ctx.reply('🔒 Please enter the 2fa authentication code. It will soon be sent to you on telegram (be patient 🙂)',
+                    {
+                        reply_markup: {
+                            force_reply: true,
+                            input_field_placeholder: "Phone 2FA Code",
+                        },
+                    });
+                    
+                break;
+
+            case '2fa':
+                // Try the 2FA code and store the session
+                setCode(configDb, input)
+                break;
+                
             case 'date':
                 // Validate and update the date setting
                 const year = Number(input.substring(0, 2));
@@ -486,11 +593,21 @@ function sendToDestination(ctx, chatId) {
     // Get the settings for the current video
     const userId = getUserId(ctx);
     const userSetting = userSettings[userId];
+    
+    // Format the name of the video
+    const currentDate = new Date();
+    const sYear = currentDate.getFullYear() - 1984;
+
+    const formattedDate = userSetting.date || `${sYear}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}`;
+    const leaderText = userSetting.leader ? ` (${userSetting.leader})` : '';
+
+    const name = `${formattedDate} ${userSetting.title || 'Title'}${leaderText}`;
 
     // Generate the telegram message 
-    var message = `${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})
-    ${userSetting.vimeoLink}
-    Pass: ${userSetting.password}`;
+
+    var message = `${name}
+    Link: ${userSetting.vimeoLink}
+    Pass: ${userSetting.password || "******"}`;
 
     bot.telegram.sendMessage(chatId, message)
 
