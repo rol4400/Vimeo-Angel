@@ -582,7 +582,7 @@ async function updateSetting(ctx:any, userId:number, input:string, match:string)
                     // Enqueue the file
                     ctx.reply('Uploading the video to storage, please wait...');
 
-                    await enqueueFile(userId.toString(), userSettings, input, queueDb, filesDb, bot);
+                    await enqueueFile(ctx, userId.toString(), userSettings, input, queueDb, filesDb, bot);
 
                     ctx.reply('Successfully queued the file for upload');
                 } catch (error) {
@@ -672,4 +672,4 @@ function sendToDestination(ctx:any, chatId:string) {
 // Start the bot
 bot.launch();
 
-export { UserSettings, UserSetting }
+export { UserSettings, UserSetting, sendToDestination }
