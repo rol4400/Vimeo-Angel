@@ -84,8 +84,9 @@ app.route('/upload').post((req, res, _next) => {
     req.busboy.on('file', (_fieldname, file, fileInfo) => {
         console.log(`Upload of '${fileInfo.filename}' started`);
  
-        const fileName = uuidv4();
-        
+        const fileExt = fileInfo.filename.split('.').pop();
+        const fileName = uuidv4() + fileExt;
+
         // Create a write stream of the new file
         const fstream = fs.createWriteStream(path.join(uploadPath, fileName));
 
@@ -98,13 +99,13 @@ app.route('/upload').post((req, res, _next) => {
 
 
             // Generate the thumbnail
-            genThumbnail(uploadPath + "\\" + fileName, uploadPath + "\\" + fileName + ".png" , '250x?', {
+            genThumbnail(uploadPath + "/" + fileName, uploadPath + "/" + fileName + ".png" , '250x?', {
                 seek: "00:00:10.00"
             }).then(() => {
                 console.log('done!')
 
                 // Prompt the user to edit the file
-                bot.telegram.sendPhoto("-4061080652", { source: uploadPath + "\\" + fileName + ".png"  }).then(() => {
+                bot.telegram.sendPhoto("-4061080652", { source: uploadPath + "/" + fileName + ".png"  }).then(() => {
                     bot.telegram.sendMessage("-4061080652", "A file has been uploaded. Whoever wants to process it please click here", {
                         reply_markup: {
                           inline_keyboard: [
