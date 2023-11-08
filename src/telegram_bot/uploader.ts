@@ -17,15 +17,12 @@ const exec = promisify(execCallback);
 // Vimeo client credentials
 import { Vimeo } from 'vimeo';
 // import Deta from 'deta/dist/types/deta';
-const clientId = process.env.CLIENT_ID;
-const clientSecret = process.env.CLIENT_SECRET;
-const accessToken = process.env.ACCESS_TOKEN;
 
 const vimeoClient = new Vimeo(
-    clientId!,
-    clientSecret!,
-    accessToken!
-  );
+    process.env.CLIENT_ID!,
+    process.env.CLIENT_SECRET!,
+    process.env.ACCESS_TOKEN!
+);
 
 // Store message IDs and chat IDs for progress bars
 const progressBars:any[] = [{}];
@@ -107,10 +104,18 @@ async function downloadVideo(fileId:string, bot:any, progressCallback:Function) 
 // For getting a file path to a file uploaded to the telegram bot API
 async function getFilePath(bot:any, userSettings:UserSettings, userId: string) {
     const userSetting = userSettings[userId];
-    const file = await bot.telegram.getFile(userSetting.videoFileId);
-    const inputStoragePath = path.join(__dirname, '..', '..', 'telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
-    const inputPath = `${file.file_path}`;
-    return inputPath;
+
+    // Check if we already have a file path set
+    if (userSetting.videoPath) {
+        return userSetting.videoPath;
+    } else {
+
+        // Get the file from the telegram bot API
+        const file = await bot.telegram.getFile(userSetting.videoFileId);
+        const inputStoragePath = path.join(__dirname, '..', '..', 'telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
+        const inputPath = `${file.file_path}`;
+        return inputPath;
+    }
 }
 
 interface QueueItem {
@@ -122,7 +127,7 @@ interface QueueItem {
   }
 
 // Enqueue a file for later processing
-async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, processingTime: string, queueDb: Base, filesDb: Drive, bot:any) {
+async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, processingTime: string, queueDb: Base, bot:any) {
 
     // Setup input variables
     let fileKey:any;
@@ -170,7 +175,7 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
             // Check if the file is still in 'queued' status (it might have been processed or canceled by the user)
             if (file.items.length > 0 && file.items[0].status === 'queued') {
                 // Process the queued file
-                await processQueuedFile(ctx, bot, queueDb, filesDb, userSettings);
+                await processQueuedFile(ctx, bot, queueDb, userSettings);
             }
         } catch (error) {
             console.error('Error processing queued file:', error);
@@ -183,7 +188,7 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
 }
 
 // Function to process a queued file
-async function processQueuedFile(ctx:any, bot:any, queueDb:Base, filesDb:Drive, userSettings:UserSettings) {
+async function processQueuedFile(ctx:any, bot:any, queueDb:Base, userSettings:UserSettings) {
     const currentTime = (new Date()).getTime();
   
     // Retrieve items that need processing
@@ -313,7 +318,7 @@ async function cutVideo(inputPath:string, outputPath:string, startTime?:string, 
     if (startTime === undefined && endTime === undefined) return inputPath;
 
     try {
-        let command = `ffmpeg -i ${inputPath}`;
+        let command = `ffmpeg -i "${inputPath}"`;
 
         if (startTime !== undefined) {
             command += ` -ss ${startTime}`;
@@ -323,7 +328,7 @@ async function cutVideo(inputPath:string, outputPath:string, startTime?:string, 
             command += ` -to ${endTime}`;
         }
 
-        command += ` ${outputPath}`;
+        command += ` "${outputPath}"`;
 
         await exec(command);
         console.log('Video cut successfully:', outputPath);
@@ -365,7 +370,7 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         const inputPath = await getFilePath(bot, userSettings, userId);
 
         // Cut the video based on start and end times
-        const outputStoragePath = path.join(__dirname, '..', 'video_store');
+        const outputStoragePath = path.join(__dirname, '..', 'uploads');
         const outputPath = `${outputStoragePath}\\${userSetting.videoFileId}_cut.mp4`;
         
         if (!silent) updateProgressMessage(chatId, bot, "Processing video...");

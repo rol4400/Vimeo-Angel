@@ -11,8 +11,10 @@ interface UserSetting {
     destination?: string;
     phoneNumber?: string;
     vimeoLink?: string;
+    videoPath?: string;
 }
 interface UserSettings {
     [userId: string]: UserSetting;
 }
-export { UserSettings };
+declare function sendToDestination(ctx: any, chatId: string, silent: boolean): void;
+export { UserSettings, UserSetting, sendToDestination };

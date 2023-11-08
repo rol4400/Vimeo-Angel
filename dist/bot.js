@@ -1,10 +1,19 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.sendToDestination = void 0;
 const telegraf_1 = require("telegraf");
 const deta_1 = require("deta");
 const helpers_1 = require("./helpers");
 const uploader_1 = require("./uploader");
+const fs_1 = __importDefault(require("fs"));
+const express_1 = __importDefault(require("express"));
+const connect_busboy_1 = __importDefault(require("connect-busboy"));
 require("dotenv/config.js");
+const path_1 = __importDefault(require("path"));
+const genThumbnail = require('simple-thumbnail');
 const bot = new telegraf_1.Telegraf(process.env.BOT_TOKEN, {
     telegram: {
         apiRoot: `http://${process.env.BOT_URI}`
@@ -13,6 +22,8 @@ const bot = new telegraf_1.Telegraf(process.env.BOT_TOKEN, {
 // Deta space data storage
 const detaInstance = (0, deta_1.Deta)(); //instantiate with Data Key or env DETA_PROJECT_KEY
 const configDb = detaInstance.Base("Configuration");
+const queueDb = detaInstance.Base("QueuedFiles");
+const filesDb = detaInstance.Drive("FileStorage");
 // // Telegram MTPROTO API Configuration
 // import { Api, TelegramClient } from 'telegram';
 // import { StringSession } from 'telegram/sessions';
@@ -31,6 +42,45 @@ async function init() {
     userClients = (resultUsers && resultUsers.value) || [{}];
 }
 init();
+// Start the express server to listen to API requests
+const app = (0, express_1.default)();
+app.use((0, connect_busboy_1.default)({
+    highWaterMark: 2 * 1024 * 1024, // Set 2MiB buffer
+}));
+const uploadPath = path_1.default.join(__dirname, '/../uploads'); // Register the upload path
+app.route('/upload').post((req, res, _next) => {
+    req.pipe(req.busboy); // Pipe it trough busboy
+    req.busboy.on('file', (_fieldname, file, fileInfo) => {
+        console.log(`Upload of '${fileInfo.filename}' started`);
+        // Create a write stream of the new file
+        const fstream = fs_1.default.createWriteStream(path_1.default.join(uploadPath, fileInfo.filename));
+        // Pipe it trough
+        file.pipe(fstream);
+        // On finish of the upload
+        fstream.on('close', () => {
+            console.log(`Upload of '${fileInfo.filename}' finished`);
+            // Generate the thumbnail
+            genThumbnail(uploadPath + "\\" + fileInfo.filename, uploadPath + "\\" + fileInfo.filename + ".png", '250x?', {
+                seek: "00:00:10.00"
+            }).then(() => {
+                console.log('done!');
+                // Prompt the user to edit the file
+                bot.telegram.sendPhoto("-4061080652", { source: uploadPath + "\\" + fileInfo.filename + ".png" }).then(() => {
+                    bot.telegram.sendMessage("-4061080652", "A file has been uploaded. Whoever wants to process it please click here", {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [
+                                    { text: '🙋 Process File', callback_data: 'process_upload_' + fileInfo.filename },
+                                ]
+                            ],
+                        }
+                    });
+                    res.sendStatus(200);
+                });
+            });
+        });
+    });
+});
 // Middleware to check if the user has settings
 bot.use((ctx, next) => {
     const userId = (0, helpers_1.getUserId)(ctx);
@@ -158,7 +208,28 @@ bot.on('callback_query', (ctx) => {
         // Save the selected destination
         userSettings[userId].destination = destination;
         // Send the message
-        sendToDestination(ctx, destination);
+        sendToDestination(ctx, destination, false);
+        return;
+    }
+    // Handle directly uploaded file selection
+    match = action.match(/process_upload_(.+)/);
+    if (match && match[1]) {
+        const userId = (0, helpers_1.getUserId)(ctx);
+        if (!userId) {
+            console.error('Unable to determine user ID');
+            return;
+        }
+        if (!checkAuthenticated(ctx, userId)) {
+            return;
+        }
+        const fileName = match[1];
+        // Clear any previous videos
+        userSettings[userId] = {};
+        // Save the video file id
+        userSettings[userId].videoPath = uploadPath + "/" + fileName;
+        userSettings[userId].videoFileId = fileName; // The id is just the filename in this case
+        // Show settings panel
+        showSettingsPanel(ctx);
         return;
     }
     // Handle other simple actions
@@ -240,16 +311,51 @@ bot.on('callback_query', (ctx) => {
                 }
             }
             // Perform the upload
-            (0, uploader_1.processUpload)(ctx, bot, userSettings, promptSendVideo);
+            const success = (0, uploader_1.processUpload)(ctx, bot, userSettings, promptSendVideo, false);
+            if (!success) {
+                // Upload failed, ask if they should queue the file to try again later
+                ctx.reply('⌚ Do you want to queue the upload for a later date and try again then?', telegraf_1.Markup.inlineKeyboard([
+                    telegraf_1.Markup.button.callback('✅ Try again now', 'complete'),
+                    telegraf_1.Markup.button.callback('⌚ Queue', 'queue'),
+                    telegraf_1.Markup.button.callback('❌ Cancel', 'cancel'),
+                ]));
+            }
             break;
         case 'cancel':
             // Reset user settings
             userSettings[userId] = {};
             ctx.reply("Cancelled. Please send me another video when you are ready");
             break;
+        case 'queue':
+            if (userSettings[userId].title === undefined) {
+                ctx.reply('Please at minimum set a title');
+                return;
+            }
+            // Check if both start and end times are set
+            if (userSettings[userId].startTime !== undefined && userSettings[userId].endTime !== undefined) {
+                // Check if end time is after start time
+                if (userSettings[userId].endTime <= userSettings[userId].startTime) {
+                    ctx.reply('End time must be after start time. Please adjust your settings.');
+                    return;
+                }
+                // Check if end time is within the duration of the video
+                const videoDuration = userSettings[userId].videoDuration; // You need to implement a function to get the video duration
+                if (userSettings[userId].endTime > videoDuration.toString()) {
+                    ctx.reply('End time must be within the duration of the video. Please adjust your settings.');
+                    return;
+                }
+            }
+            // Ask the user for when they want to queue the upload for
+            ctx.reply('⏰ Please enter the time or date of when you want to upload the video', {
+                reply_markup: {
+                    force_reply: true,
+                    input_field_placeholder: "End Date or Time",
+                },
+            });
+            break;
         case 'send_link':
             // Send the link to the specified destination
-            sendToDestination(ctx, userSettings[userId].destination);
+            sendToDestination(ctx, userSettings[userId].destination, false);
             break;
         default:
             console.log("DEFAULT");
@@ -267,7 +373,7 @@ bot.on('text', (ctx) => {
     if (!checkAuthenticated(ctx, userId)) {
         return;
     }
-    if (!userSettings[userId].videoFileId) {
+    if (!(userSettings[userId].videoFileId || userSettings[userId].videoPath)) {
         ctx.reply("Please upload a video file here before I can do anything");
         return;
     }
@@ -282,9 +388,7 @@ function showSettingsPanel(ctx) {
         return;
     }
     const userSetting = userSettings[userId];
-    const destinationName = destinations.length > 0
-        ? (destinations.find(([_, id]) => id === userSetting.destination) || [])[0]
-        : undefined;
+    const destinationName = (destinations.find(([_, id]) => id === userSetting.destination) ?? [])[0] ?? '';
     // Include information about start and end times
     const timeInfo = userSetting.startTime && userSetting.endTime
         ? `\n⏰ Start Time: ${(0, helpers_1.formatTime)(userSetting.startTime)}\n⏰ End Time: ${(0, helpers_1.formatTime)(userSetting.endTime)}`
@@ -294,7 +398,7 @@ function showSettingsPanel(ctx) {
                 ? `\n⏰ End Time: ${(0, helpers_1.formatTime)(userSetting.endTime)}`
                 : '';
     // The title of the message
-    const uploadingVideoMessage = userSetting.videoFileId
+    const uploadingVideoMessage = (userSetting.videoFileId || userSetting.videoPath)
         ? `📹 Video: ${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
         : '🚫 No video uploaded yet. Please upload a video to start.';
     // Generate the buttons
@@ -316,6 +420,7 @@ function showSettingsPanel(ctx) {
         ],
         [
             telegraf_1.Markup.button.callback('✅ Complete', 'complete'),
+            telegraf_1.Markup.button.callback('⌚ Queue', 'queue'),
             telegraf_1.Markup.button.callback('❌ Cancel', 'cancel'),
         ],
     ]));
@@ -413,6 +518,19 @@ async function updateSetting(ctx, userId, input, match) {
                     });
                 }
                 break;
+            case 'time':
+                try {
+                    // Enqueue the file
+                    ctx.reply('Uploading the video to storage, please wait...');
+                    await (0, uploader_1.enqueueFile)(ctx, userId.toString(), userSettings, input, queueDb, bot);
+                    ctx.reply('Successfully queued the file for upload');
+                }
+                catch (error) {
+                    ctx.reply('Error queueing the file, please check the date or time you gave is a valid future date');
+                    console.log(error);
+                    return;
+                }
+                break;
             default:
                 // Handle other settings if needed
                 break;
@@ -452,7 +570,7 @@ function promptSendVideo(ctx) {
         : 'Do you want to send the link to a chatroom?.';
     ctx.replyWithMarkdown(message, keyboardOptions);
 }
-function sendToDestination(ctx, chatId) {
+function sendToDestination(ctx, chatId, silent) {
     // Get the settings for the current video
     const userId = (0, helpers_1.getUserId)(ctx);
     const userSetting = userSettings[userId];
@@ -463,12 +581,15 @@ function sendToDestination(ctx, chatId) {
     const leaderText = userSetting.leader ? ` (${userSetting.leader})` : '';
     const name = `${formattedDate} ${userSetting.title || 'Title'}${leaderText}`;
     // Generate the telegram message 
-    var message = `${name}
-    Link: ${userSetting.vimeoLink}
-    Pass: ${userSetting.password || "******"}`;
+    var message = `<${name}>
+${userSetting.vimeoLink}
+Pass: ${userSetting.password || "<<default password>>"}`;
     bot.telegram.sendMessage(chatId, message);
-    ctx.reply(`Link has been sent to the chat`);
+    if (!silent)
+        ctx.reply(`Link has been sent to the chat`);
 }
-// Start the bot
+exports.sendToDestination = sendToDestination;
+// Start the bot and express server
+app.listen(8082, () => console.log('API listening on port 8082'));
 bot.launch();
 //# sourceMappingURL=bot.js.map

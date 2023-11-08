@@ -3,7 +3,14 @@ import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
 import { processUpload, enqueueFile } from "./uploader"
 
+import fs from 'fs';
+import express from 'express';
+import busboy from 'connect-busboy';
+
 import "dotenv/config.js";
+import path from 'path';
+
+const genThumbnail = require('simple-thumbnail')
 
 const bot = new Telegraf(process.env.BOT_TOKEN!, {
     telegram: {
@@ -37,6 +44,7 @@ interface UserSetting {
     destination?: string;
     phoneNumber?: string; 
     vimeoLink?: string;
+    videoPath?: string;
 }
 interface UserSettings {
     [userId: string]: UserSetting;
@@ -59,6 +67,57 @@ async function init() {
     userClients = (resultUsers && resultUsers.value) || [{}];
 }
 init();
+
+// Start the express server to listen to API requests
+const app = express();
+app.use(busboy({
+    highWaterMark: 2 * 1024 * 1024, // Set 2MiB buffer
+}));
+
+const uploadPath = path.join(__dirname, '/../uploads'); // Register the upload path
+
+app.route('/upload').post((req, res, _next) => {
+ 
+    req.pipe(req.busboy); // Pipe it trough busboy
+ 
+    req.busboy.on('file', (_fieldname, file, fileInfo) => {
+        console.log(`Upload of '${fileInfo.filename}' started`);
+ 
+        // Create a write stream of the new file
+        const fstream = fs.createWriteStream(path.join(uploadPath, fileInfo.filename));
+
+        // Pipe it trough
+        file.pipe(fstream);
+ 
+        // On finish of the upload
+        fstream.on('close', () => {
+            console.log(`Upload of '${fileInfo.filename}' finished`);
+
+            // Generate the thumbnail
+            genThumbnail(uploadPath + "\\" + fileInfo.filename, uploadPath + "\\" + fileInfo.filename + ".png" , '250x?', {
+                seek: "00:00:10.00"
+            }).then(() => {
+                console.log('done!')
+
+                // Prompt the user to edit the file
+                bot.telegram.sendPhoto("-4061080652", { source: uploadPath + "\\" + fileInfo.filename + ".png"  }).then(() => {
+                    bot.telegram.sendMessage("-4061080652", "A file has been uploaded. Whoever wants to process it please click here", {
+                        reply_markup: {
+                          inline_keyboard: [
+                            [
+                              { text: '🙋 Process File', callback_data: 'process_upload_' + fileInfo.filename },
+                            ]
+                          ],
+                        }
+                    });
+                    res.sendStatus(200);
+                });
+    
+            })
+
+        });
+    });
+});
 
 // Middleware to check if the user has settings
 bot.use((ctx:any, next:any) => {
@@ -222,8 +281,34 @@ bot.on('callback_query', (ctx:any) => {
         userSettings[userId].destination = destination;
 
        // Send the message
-       sendToDestination(ctx, destination);
+       sendToDestination(ctx, destination, false);
 
+        return;
+    }
+
+    // Handle directly uploaded file selection
+    match = action.match(/process_upload_(.+)/);
+    if (match && match[1]) {
+        const userId = getUserId(ctx);
+
+        if (!userId) {
+            console.error('Unable to determine user ID');
+            return;
+        }
+        
+        if (!checkAuthenticated(ctx, userId)) { return; }
+        
+        const fileName = match[1];
+
+        // Clear any previous videos
+        userSettings[userId] = {};
+        
+        // Save the video file id
+        userSettings[userId].videoPath = uploadPath + "/" + fileName;
+        userSettings[userId].videoFileId = fileName; // The id is just the filename in this case
+        
+        // Show settings panel
+        showSettingsPanel(ctx);
         return;
     }
   
@@ -383,7 +468,7 @@ bot.on('callback_query', (ctx:any) => {
 
         case 'send_link':
             // Send the link to the specified destination
-            sendToDestination(ctx, userSettings[userId].destination!);
+            sendToDestination(ctx, userSettings[userId].destination!, false);
             break;
 
         default:
@@ -405,7 +490,7 @@ bot.on('text', (ctx) => {
     
     if (!checkAuthenticated(ctx, userId)) { return; }
 
-    if (!userSettings[userId].videoFileId) {
+    if (!(userSettings[userId].videoFileId || userSettings[userId].videoPath)) {
         ctx.reply("Please upload a video file here before I can do anything");
         return;
     }
@@ -437,7 +522,7 @@ function showSettingsPanel(ctx:any) {
                 : '';
 
     // The title of the message
-    const uploadingVideoMessage = userSetting.videoFileId
+    const uploadingVideoMessage = (userSetting.videoFileId || userSetting.videoPath)
     ? `📹 Video: ${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
     : '🚫 No video uploaded yet. Please upload a video to start.';
 
@@ -582,7 +667,7 @@ async function updateSetting(ctx:any, userId:number, input:string, match:string)
                     // Enqueue the file
                     ctx.reply('Uploading the video to storage, please wait...');
 
-                    await enqueueFile(ctx, userId.toString(), userSettings, input, queueDb, filesDb, bot);
+                    await enqueueFile(ctx, userId.toString(), userSettings, input, queueDb, bot);
 
                     ctx.reply('Successfully queued the file for upload');
                 } catch (error) {
@@ -668,8 +753,8 @@ Pass: ${userSetting.password || "<<default password>>"}`;
 
 }
 
-
-// Start the bot
+// Start the bot and express server
+app.listen(8082, () => console.log('API listening on port 8082'));
 bot.launch();
 
 export { UserSettings, UserSetting, sendToDestination }

@@ -1,3 +1,5 @@
 import { UserSettings } from "./bot";
-declare function processUpload(ctx: any, bot: any, userSettings: UserSettings, promptSendVideo: Function): Promise<void>;
-export { processUpload };
+import Base from 'deta/dist/types/base';
+declare function enqueueFile(ctx: any, userId: string, userSettings: UserSettings, processingTime: string, queueDb: Base, bot: any): Promise<void>;
+declare function processUpload(ctx: any, bot: any, userSettings: UserSettings, promptSendVideo: Function, silent: boolean): Promise<boolean>;
+export { processUpload, enqueueFile };
