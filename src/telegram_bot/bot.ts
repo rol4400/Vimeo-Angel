@@ -84,8 +84,10 @@ app.route('/upload').post((req, res, _next) => {
     req.busboy.on('file', (_fieldname, file, fileInfo) => {
         console.log(`Upload of '${fileInfo.filename}' started`);
  
+        const fileName = uuidv4();
+        
         // Create a write stream of the new file
-        const fstream = fs.createWriteStream(path.join(uploadPath, fileInfo.filename));
+        const fstream = fs.createWriteStream(path.join(uploadPath, fileName));
 
         // Pipe it trough
         file.pipe(fstream);
@@ -94,7 +96,6 @@ app.route('/upload').post((req, res, _next) => {
         fstream.on('close', () => {
             console.log(`Upload of '${fileInfo.filename}' finished`);
 
-            const fileName = uuidv4();
 
             // Generate the thumbnail
             genThumbnail(uploadPath + "\\" + fileName, uploadPath + "\\" + fileName + ".png" , '250x?', {
