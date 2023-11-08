@@ -328,7 +328,7 @@ bot.on('callback_query', (ctx:any) => {
             }
 
             // Perform the upload
-            const success = processUpload(ctx, bot, userSettings, promptSendVideo);
+            const success = processUpload(ctx, bot, userSettings, promptSendVideo, false);
             if (!success) {
 
                 // Upload failed, ask if they should queue the file to try again later
