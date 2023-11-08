@@ -4,12 +4,18 @@ import { exec as execCallback } from 'child_process';
 import { getUserId } from './helpers';
 import fs from 'fs';
 import path, { resolve } from 'path';
-import { UserSettings }from "./bot"
+import { UserSettings, UserSetting }from "./bot"
+import { Deta } from 'deta';
+import { DetaType } from 'deta/dist/types/types/basic';
+import Base from 'deta/dist/types/base';
+import Drive from 'deta/dist/types/drive';
+import * as chrono from 'chrono-node';
 
 const exec = promisify(execCallback);
 
 // Vimeo client credentials
 import { Vimeo } from 'vimeo';
+// import Deta from 'deta/dist/types/deta';
 const clientId = process.env.CLIENT_ID;
 const clientSecret = process.env.CLIENT_SECRET;
 const accessToken = process.env.ACCESS_TOKEN;
@@ -97,6 +103,77 @@ async function downloadVideo(fileId:string, bot:any, progressCallback:Function) 
     }
 }
 
+// For getting a file path to a file uploaded to the telegram bot API
+async function getFilePath(bot:any, userSettings:UserSettings, userId: string) {
+    const userSetting = userSettings[userId];
+    const file = await bot.telegram.getFile(userSetting.videoFileId);
+    const inputStoragePath = path.join(__dirname, '..', '..', 'telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
+    const inputPath = `${file.file_path}`;
+    return inputPath;
+}
+
+interface QueueItem {
+    userId: string;
+    fileSettings: UserSetting;
+    fileKey: string;
+    processingTime: number;
+    status: string;
+  }
+
+// Enqueue a file for later processing
+async function enqueueFile(userId: string, userSettings: UserSettings, processingTime: string, configDb: Base, filesDb: Drive, bot:any) {
+
+    // Setup input variables
+    let fileKey;
+    const filePath = await getFilePath(bot, userSettings, userId);
+    const fileSettings = userSettings[userId];
+
+    // Generate the date of processing using natural language
+    const parsedDate = chrono.parseDate(processingTime);
+
+    try {
+        // Get the file name from the file path
+        const fileName = path.basename(filePath);
+    
+        // Upload the file to Deta Drive
+        fileKey = await filesDb.put(fileName, { path: filePath });
+
+    } catch (error) {
+        console.error('Error uploading file to Deta Drive:', error);
+        return;
+    }
+
+    const item:QueueItem = {
+      userId,
+      fileSettings,
+      fileKey,
+      processingTime: parsedDate.getTime(), // Store processing time as a timestamp
+      status: 'queued',
+    };
+  
+    await configDb.insert(item as unknown as DetaType);
+}
+
+  // Processing scheduler
+// async function processQueue(configDb: Base) {
+//     const currentTime = new Date().getTime();
+  
+//     // Retrieve items that need processing
+//     const itemsToProcess = await configDb.fetch({
+//       processingTime: { $lte: currentTime },
+//       status: 'queued',
+//     }).items;
+  
+//     // Process each item
+//     for (const item of itemsToProcess) {
+//       // Implement your file processing logic here
+//       // Retrieve file from Deta Drive using item.userId and item.fileSettings
+//       // ...
+  
+//       // Update item status to 'processed' in the Deta Base collection
+//       await configDb.update({ status: 'processed' }, { userId: item.userId });
+//     }
+//   }
 
 // Function to upload video to Vimeo with progress bar
 async function uploadToVimeo(localFilePath:string, userId:number, userSettings:UserSettings, progressCallback:Function) {
@@ -250,9 +327,7 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         // });
         // console.log('Video downloaded successfully:', localFilePath);
 
-        const file = await bot.telegram.getFile(userSetting.videoFileId);
-        const inputStoragePath = path.join(__dirname, '..', '..', 'telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
-        const inputPath = `${file.file_path}`;
+        const inputPath = await getFilePath(bot, userSettings, userId);
 
         // Cut the video based on start and end times
         const outputStoragePath = path.join(__dirname, '..', 'video_store');
@@ -344,4 +419,4 @@ async function updateProgressMessage(chatId:number, bot:any, text:string) {
     }
 }
 
-export { processUpload }
+export { processUpload, enqueueFile }

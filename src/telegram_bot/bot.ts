@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
-import { processUpload } from "./uploader"
+import { processUpload, enqueueFile } from "./uploader"
 
 import "dotenv/config.js";
 
@@ -14,6 +14,8 @@ const bot = new Telegraf(process.env.BOT_TOKEN!, {
 // Deta space data storage
 const detaInstance = Deta();  //instantiate with Data Key or env DETA_PROJECT_KEY
 const configDb = detaInstance.Base("Configuration");
+const queueDb = detaInstance.Base("QueuedFiles");
+const filesDb = detaInstance.Drive("FileStorage");
 
 // // Telegram MTPROTO API Configuration
 // import { Api, TelegramClient } from 'telegram';
@@ -337,6 +339,40 @@ bot.on('callback_query', (ctx:any) => {
 
             break;
 
+        case 'queue':
+
+            if (userSettings[userId].title === undefined) {
+                ctx.reply('Please at minimum set a title');
+                return;
+            }
+
+            // Check if both start and end times are set
+            if (userSettings[userId].startTime !== undefined && userSettings[userId].endTime !== undefined) {
+                // Check if end time is after start time
+                if (userSettings[userId].endTime! <= userSettings[userId].startTime!) {
+                    ctx.reply('End time must be after start time. Please adjust your settings.');
+                    return;
+                }
+
+                // Check if end time is within the duration of the video
+                const videoDuration = userSettings[userId].videoDuration; // You need to implement a function to get the video duration
+                if (userSettings[userId].endTime! > videoDuration!.toString()) {
+                    ctx.reply('End time must be within the duration of the video. Please adjust your settings.');
+                    return;
+                }
+            }
+
+            // Ask the user for when they want to queue the upload for
+            ctx.reply('⏰ Please enter the time or date of when you want to upload the video',
+                {
+                    reply_markup: {
+                        force_reply: true,
+                        input_field_placeholder: "End Date or Time",
+                    },
+                });
+
+            break;
+
         case 'send_link':
             // Send the link to the specified destination
             sendToDestination(ctx, userSettings[userId].destination!);
@@ -348,7 +384,7 @@ bot.on('callback_query', (ctx:any) => {
             break;
 
     }
-  });
+});
 
 // Handle text messages
 bot.on('text', (ctx) => {
@@ -416,6 +452,7 @@ function showSettingsPanel(ctx:any) {
         ],
         [
             Markup.button.callback('✅ Complete', 'complete'),
+            Markup.button.callback('⌚ Queue', 'queue'),
             Markup.button.callback('❌ Cancel', 'cancel'),
         ],
     ]));
@@ -531,6 +568,23 @@ async function updateSetting(ctx:any, userId:number, input:string, match:string)
                 }
                 break;
 
+            case 'time':
+
+                try {
+                    // Enqueue the file
+                    ctx.reply('Uploading the video to storage, please wait...');
+                    
+                    await enqueueFile(userId.toString(), userSettings, input, queueDb, filesDb, bot);
+
+                    ctx.reply('Successfully queued the file for upload');
+                } catch (error) {
+                    ctx.reply('Error queueing the file, please try again later');
+                    console.log(error)
+                    return;
+                }
+                
+                break;
+
             default:
                 // Handle other settings if needed
                 break;
@@ -610,4 +664,4 @@ function sendToDestination(ctx:any, chatId:string) {
 // Start the bot
 bot.launch();
 
-export { UserSettings }
+export { UserSettings, UserSetting }
