@@ -85,7 +85,7 @@ app.route('/upload').post((req, res, _next) => {
         console.log(`Upload of '${fileInfo.filename}' started`);
  
         const fileExt = fileInfo.filename.split('.').pop();
-        const fileName = uuidv4() + fileExt;
+        const fileName = uuidv4() + "." + fileExt;
 
         // Create a write stream of the new file
         const fstream = fs.createWriteStream(path.join(uploadPath, fileName));
