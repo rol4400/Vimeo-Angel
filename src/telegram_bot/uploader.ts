@@ -392,12 +392,10 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
             // Since it's in silent mode, we will just automatically send the message
             const destinationExists = userSettings[userId].destination !== undefined;
             if (destinationExists) {
-                sendToDestination(ctx, userSettings[userId].destination!);
+                sendToDestination(ctx, userSettings[userId].destination!, true);
             } else {
-                sendToDestination(ctx, "-4061080652"); // Default destination is the Vimeo Angel Admin Room
+                sendToDestination(ctx, "-4061080652", true); // Default destination is the Vimeo Angel Admin Room
             }
-            
-
         }
 
         // Reset user settings
