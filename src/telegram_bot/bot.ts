@@ -328,8 +328,16 @@ bot.on('callback_query', (ctx:any) => {
             }
 
             // Perform the upload
-            processUpload(ctx, bot, userSettings, promptSendVideo);
+            const success = processUpload(ctx, bot, userSettings, promptSendVideo);
+            if (!success) {
 
+                // Upload failed, ask if they should queue the file to try again later
+                ctx.reply('⌚ Do you want to queue the upload for a later date and try again then?', Markup.inlineKeyboard([
+                    Markup.button.callback('✅ Try again now', 'complete'),
+                    Markup.button.callback('⌚ Queue', 'queue'),
+                    Markup.button.callback('❌ Cancel', 'cancel'),
+                ]));
+            }
             break;
 
         case 'cancel':
@@ -573,7 +581,7 @@ async function updateSetting(ctx:any, userId:number, input:string, match:string)
                 try {
                     // Enqueue the file
                     ctx.reply('Uploading the video to storage, please wait...');
-                    
+
                     await enqueueFile(userId.toString(), userSettings, input, queueDb, filesDb, bot);
 
                     ctx.reply('Successfully queued the file for upload');

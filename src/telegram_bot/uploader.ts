@@ -356,11 +356,12 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         // userSettings[userId] = {};
 
     } catch (error) {
+        
         console.error('Error processing video:', error);
         ctx.reply('Error processing video. Please try again later.');
 
         //TODO: Deletion here
-        return;
+        return false;
     }
     
     // Edit the final message indicating completion
@@ -370,6 +371,8 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         null,
         'Processing complete!\n' + generateProgressBar(100)
     );
+
+    return true
 }
 
 // Function to generate a simple ASCII progress bar
