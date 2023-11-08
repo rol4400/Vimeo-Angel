@@ -192,10 +192,13 @@ async function processQueuedFile(ctx:any, bot:any, configDb:Base, filesDb:Drive,
       status: 'queued',
     })).items;
 
+    console.log("Items to process")
+    console.log(itemsToProcess);
+
     // Process each item
     for (const item of itemsToProcess) {
         // Implement your file processing logic here
-        processUpload(ctx, bot, userSettings, () => {}, true)
+        processUpload(ctx, bot, userSettings, () => {}, false)
         
         // Update item status to 'processed' in the Deta Base collection
         // await configDb.update({ status: 'processed' }, (item.userId!) as string);
@@ -337,6 +340,8 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
     const userSetting = userSettings[userId];
 
     let progressMessage;
+
+    console.log("Processing upload");
 
     try {
         // Check if progress message has been sent
