@@ -380,8 +380,10 @@ function showSettingsPanel(ctx:any) {
 
     const userSetting = userSettings[userId];
 
-    const destinationName = destinations.find(([_, id]:any) => id === userSetting.destination)[0];
-
+    const destinationName = destinations.length > 0
+    ? (destinations.find(([_, id]: any) => id === userSetting.destination) || [])[0]
+    : undefined;
+    
     // Include information about start and end times
     const timeInfo = userSetting.startTime && userSetting.endTime
         ? `\n⏰ Start Time: ${formatTime(userSetting.startTime)}\n⏰ End Time: ${formatTime(userSetting.endTime)}`
