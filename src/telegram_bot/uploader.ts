@@ -131,6 +131,8 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
 
     // Generate the date of processing using natural language
     const parsedDate = chrono.parseDate(processingTime);
+    console.log("Queueing job for:");
+    console.log(parsedDate);
 
     try {
         // Get the file name from the file path
