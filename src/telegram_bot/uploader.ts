@@ -4,12 +4,13 @@ import { exec as execCallback } from 'child_process';
 import { getUserId } from './helpers';
 import fs from 'fs';
 import path, { resolve } from 'path';
-import { UserSettings, UserSetting }from "./bot"
+import { UserSettings, UserSetting, sendToDestination } from "./bot"
 import { Deta } from 'deta';
 import { DetaType } from 'deta/dist/types/types/basic';
 import Base from 'deta/dist/types/base';
 import Drive from 'deta/dist/types/drive';
 import * as chrono from 'chrono-node';
+import { CronJob } from 'cron';
 
 const exec = promisify(execCallback);
 
@@ -121,10 +122,10 @@ interface QueueItem {
   }
 
 // Enqueue a file for later processing
-async function enqueueFile(userId: string, userSettings: UserSettings, processingTime: string, configDb: Base, filesDb: Drive, bot:any) {
+async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, processingTime: string, configDb: Base, filesDb: Drive, bot:any) {
 
     // Setup input variables
-    let fileKey;
+    let fileKey:any;
     const filePath = await getFilePath(bot, userSettings, userId);
     const fileSettings = userSettings[userId];
 
@@ -136,7 +137,8 @@ async function enqueueFile(userId: string, userSettings: UserSettings, processin
         const fileName = path.basename(filePath);
     
         // Upload the file to Deta Drive
-        fileKey = await filesDb.put(fileName, { path: filePath });
+        // TODO: Solve this
+        // fileKey = await filesDb.put(fileName, { path: filePath });
 
     } catch (error) {
         console.error('Error uploading file to Deta Drive:', error);
@@ -152,28 +154,48 @@ async function enqueueFile(userId: string, userSettings: UserSettings, processin
     };
   
     await configDb.insert(item as unknown as DetaType);
+
+    // Schedule a processing job at the specified processing time
+    const job = new CronJob(processingTime, async () => {
+        try {
+            // Retrieve the file from the database
+            const file = await configDb.fetch({ userId, fileKey });
+
+            // Check if the file is still in 'queued' status (it might have been processed or canceled by the user)
+            if (file.items.length > 0 && file.items[0].status === 'queued') {
+                // Process the queued file
+                await processQueuedFile(ctx, bot, configDb, filesDb, userSettings);
+            }
+        } catch (error) {
+            console.error('Error processing queued file:', error);
+            // Handle the error as needed
+        }
+    });
+
+    // Start the cron job
+    job.start();
 }
 
-  // Processing scheduler
-// async function processQueue(configDb: Base) {
-//     const currentTime = new Date().getTime();
+// Function to process a queued file
+async function processQueuedFile(ctx:any, bot:any, configDb:Base, filesDb:Drive, userSettings:UserSettings) {
+    const currentTime = new Date().getTime();
   
-//     // Retrieve items that need processing
-//     const itemsToProcess = await configDb.fetch({
-//       processingTime: { $lte: currentTime },
-//       status: 'queued',
-//     }).items;
-  
-//     // Process each item
-//     for (const item of itemsToProcess) {
-//       // Implement your file processing logic here
-//       // Retrieve file from Deta Drive using item.userId and item.fileSettings
-//       // ...
-  
-//       // Update item status to 'processed' in the Deta Base collection
-//       await configDb.update({ status: 'processed' }, { userId: item.userId });
-//     }
-//   }
+    // Retrieve items that need processing
+    const itemsToProcess = (await configDb.fetch({
+      processingTime: { $lte: currentTime },
+      status: 'queued',
+    })).items;
+
+    // Process each item
+    for (const item of itemsToProcess) {
+        // Implement your file processing logic here
+        processUpload(ctx, bot, userSettings, () => {}, true)
+        
+        // Update item status to 'processed' in the Deta Base collection
+        // await configDb.update({ status: 'processed' }, (item.userId!) as string);
+        await configDb.delete((item.userId!) as string);
+    }
+}
 
 // Function to upload video to Vimeo with progress bar
 async function uploadToVimeo(localFilePath:string, userId:number, userSettings:UserSettings, progressCallback:Function) {
@@ -303,7 +325,7 @@ async function cutVideo(inputPath:string, outputPath:string, startTime?:string, 
     }
 }
 
-async function processUpload(ctx:any, bot:any, userSettings:UserSettings, promptSendVideo:Function) {
+async function processUpload(ctx:any, bot:any, userSettings:UserSettings, promptSendVideo:Function, silent:boolean) {
     const userId = getUserId(ctx);
     const chatId:number = ctx.chat.id;
     const userSetting = userSettings[userId];
@@ -313,8 +335,10 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
     try {
         // Check if progress message has been sent
         if (!progressBars[chatId] || !progressBars[chatId].message_id) {
-            progressMessage = await ctx.reply('Preparing for processing...');
-            progressBars[chatId] = { message_id: progressMessage.message_id };
+            if (!silent){
+                progressMessage = await ctx.reply('Preparing for processing...');
+                progressBars[chatId] = { message_id: progressMessage.message_id };
+            }
         }
 
         // Download the video from telegram
@@ -333,7 +357,7 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         const outputStoragePath = path.join(__dirname, '..', 'video_store');
         const outputPath = `${outputStoragePath}\\${userSetting.videoFileId}_cut.mp4`;
         
-        updateProgressMessage(chatId, bot, "Processing video...");
+        if (!silent) updateProgressMessage(chatId, bot, "Processing video...");
         const resultPath = await cutVideo(inputPath, outputPath, userSetting.startTime, userSetting.endTime);
         console.log('Video cut successfully:', outputPath);
 
@@ -342,15 +366,28 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
             const progressBar = generateProgressBar(percentage);
 
             const uploadedMBFormatted = !isNaN(parseFloat(uploadedMB)) ? parseFloat(uploadedMB).toFixed(2) : 'N/A';
-            updateProgressMessage(chatId, bot, `Uploading to Vimeo... ${percentage}% (${uploadedMBFormatted} MB / ${parseFloat(totalMB).toFixed(2)} MB)\n${progressBar}`);
+            if (!silent) updateProgressMessage(chatId, bot, `Uploading to Vimeo... ${percentage}% (${uploadedMBFormatted} MB / ${parseFloat(totalMB).toFixed(2)} MB)\n${progressBar}`);
         });
 
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
-        await ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage${vimeoUri}`);
+        if (!silent) await ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage${vimeoUri}`);
         userSetting.vimeoLink = `https://vimeo.com/manage${vimeoUri}`;
 
         // Prompt user to send the link to the designated chatroom
-        promptSendVideo(ctx);
+        if (!silent) {
+            promptSendVideo(ctx);
+        } else {
+            
+            // Since it's in silent mode, we will just automatically send the message
+            const destinationExists = userSettings[userId].destination !== undefined;
+            if (destinationExists) {
+                sendToDestination(ctx, userSettings[userId].destination!);
+            } else {
+                sendToDestination(ctx, "-4061080652"); // Default destination is the Vimeo Angel Admin Room
+            }
+            
+
+        }
 
         // Reset user settings
         // userSettings[userId] = {};
@@ -358,14 +395,14 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
     } catch (error) {
         
         console.error('Error processing video:', error);
-        ctx.reply('Error processing video. Please try again later.');
+        if (!silent) ctx.reply('Error processing video. Please try again later.');
 
         //TODO: Deletion here
         return false;
     }
     
     // Edit the final message indicating completion
-    await ctx.telegram.editMessageText(
+    if (!silent) await ctx.telegram.editMessageText(
         chatId,
         progressBars[chatId].message_id,
         null,
