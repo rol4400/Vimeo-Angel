@@ -754,7 +754,7 @@ Pass: ${userSetting.password || "<<default password>>"}`;
 }
 
 // Start the bot and express server
-app.listen(8082, () => console.log('API listening on port 8082'));
+app.listen(80, () => console.log('API listening on port 80'));
 bot.launch();
 
 export { UserSettings, UserSetting, sendToDestination }
