@@ -2,6 +2,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
 import { processUpload, enqueueFile } from "./uploader"
+import { v4 as uuidv4 } from 'uuid';
 
 import fs from 'fs';
 import express from 'express';
@@ -93,19 +94,21 @@ app.route('/upload').post((req, res, _next) => {
         fstream.on('close', () => {
             console.log(`Upload of '${fileInfo.filename}' finished`);
 
+            const fileName = uuidv4();
+
             // Generate the thumbnail
-            genThumbnail(uploadPath + "\\" + fileInfo.filename, uploadPath + "\\" + fileInfo.filename + ".png" , '250x?', {
+            genThumbnail(uploadPath + "\\" + fileName, uploadPath + "\\" + fileName + ".png" , '250x?', {
                 seek: "00:00:10.00"
             }).then(() => {
                 console.log('done!')
 
                 // Prompt the user to edit the file
-                bot.telegram.sendPhoto("-4061080652", { source: uploadPath + "\\" + fileInfo.filename + ".png"  }).then(() => {
+                bot.telegram.sendPhoto("-4061080652", { source: uploadPath + "\\" + fileName + ".png"  }).then(() => {
                     bot.telegram.sendMessage("-4061080652", "A file has been uploaded. Whoever wants to process it please click here", {
                         reply_markup: {
                           inline_keyboard: [
                             [
-                              { text: '🙋 Process File', callback_data: 'process_upload_' + fileInfo.filename },
+                              { text: '🙋 Process File', callback_data: 'process_upload_' + fileName },
                             ]
                           ],
                         }
