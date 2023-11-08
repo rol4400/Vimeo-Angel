@@ -156,7 +156,7 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
     await configDb.insert(item as unknown as DetaType);
 
     // Schedule a processing job at the specified processing time
-    const job = new CronJob(processingTime, async () => {
+    const job = new CronJob(parsedDate, async () => {
         try {
             // Retrieve the file from the database
             const file = await configDb.fetch({ userId, fileKey });
