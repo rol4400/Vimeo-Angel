@@ -122,7 +122,7 @@ interface QueueItem {
   }
 
 // Enqueue a file for later processing
-async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, processingTime: string, configDb: Base, filesDb: Drive, bot:any) {
+async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, processingTime: string, queueDb: Base, filesDb: Drive, bot:any) {
 
     // Setup input variables
     let fileKey:any;
@@ -155,7 +155,7 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
       status: 'queued',
     };
   
-    await configDb.insert(item as unknown as DetaType);
+    await queueDb.insert(item as unknown as DetaType);
 
     // Schedule a processing job at the specified processing time
     const job = new CronJob(parsedDate, async () => {
@@ -163,14 +163,14 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
         console.log("Running queued job...");
         try {
             // Retrieve the file from the database
-            const file = await configDb.fetch({ userId, fileKey });
+            const file = await queueDb.fetch({ userId, fileKey });
 
             console.log(file)
 
             // Check if the file is still in 'queued' status (it might have been processed or canceled by the user)
             if (file.items.length > 0 && file.items[0].status === 'queued') {
                 // Process the queued file
-                await processQueuedFile(ctx, bot, configDb, filesDb, userSettings);
+                await processQueuedFile(ctx, bot, queueDb, filesDb, userSettings);
             }
         } catch (error) {
             console.error('Error processing queued file:', error);
@@ -183,13 +183,13 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
 }
 
 // Function to process a queued file
-async function processQueuedFile(ctx:any, bot:any, configDb:Base, filesDb:Drive, userSettings:UserSettings) {
-    const currentTime = new Date().getTime();
+async function processQueuedFile(ctx:any, bot:any, queueDb:Base, filesDb:Drive, userSettings:UserSettings) {
+    const currentTime = (new Date()).getTime();
   
     // Retrieve items that need processing
-    const itemsToProcess = (await configDb.fetch({
-      processingTime: { $lte: currentTime },
-      status: 'queued',
+    const itemsToProcess = (await queueDb.fetch({
+        "processingTime?lte": currentTime,
+        "status": 'queued',
     })).items;
 
     console.log("Items to process")
@@ -198,11 +198,11 @@ async function processQueuedFile(ctx:any, bot:any, configDb:Base, filesDb:Drive,
     // Process each item
     for (const item of itemsToProcess) {
         // Implement your file processing logic here
-        processUpload(ctx, bot, userSettings, () => {}, false)
+        processUpload(ctx, bot, userSettings, () => {}, true)
         
         // Update item status to 'processed' in the Deta Base collection
         // await configDb.update({ status: 'processed' }, (item.userId!) as string);
-        await configDb.delete((item.userId!) as string);
+        await queueDb.delete((item.userId!) as string);
     }
 }
 
@@ -392,12 +392,10 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
             // Since it's in silent mode, we will just automatically send the message
             const destinationExists = userSettings[userId].destination !== undefined;
             if (destinationExists) {
-                sendToDestination(ctx, userSettings[userId].destination!);
+                sendToDestination(ctx, userSettings[userId].destination!, true);
             } else {
-                sendToDestination(ctx, "-4061080652"); // Default destination is the Vimeo Angel Admin Room
+                sendToDestination(ctx, "-4061080652", true); // Default destination is the Vimeo Angel Admin Room
             }
-            
-
         }
 
         // Reset user settings

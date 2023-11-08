@@ -586,7 +586,7 @@ async function updateSetting(ctx:any, userId:number, input:string, match:string)
 
                     ctx.reply('Successfully queued the file for upload');
                 } catch (error) {
-                    ctx.reply('Error queueing the file, please try again later');
+                    ctx.reply('Error queueing the file, please check the date or time you gave is a valid future date');
                     console.log(error)
                     return;
                 }
@@ -641,7 +641,7 @@ function promptSendVideo(ctx:any) {
 }
 
 
-function sendToDestination(ctx:any, chatId:string) {
+function sendToDestination(ctx:any, chatId:string, silent:boolean) {
 
     // Get the settings for the current video
     const userId = getUserId(ctx);
@@ -658,13 +658,13 @@ function sendToDestination(ctx:any, chatId:string) {
 
     // Generate the telegram message 
 
-    var message = `${name}
-    Link: ${userSetting.vimeoLink}
-    Pass: ${userSetting.password || "******"}`;
+    var message = `<${name}>
+${userSetting.vimeoLink}
+Pass: ${userSetting.password || "<<default password>>"}`;
 
     bot.telegram.sendMessage(chatId, message)
 
-    ctx.reply(`Link has been sent to the chat`);
+    if (!silent) ctx.reply(`Link has been sent to the chat`);
 
 }
 
