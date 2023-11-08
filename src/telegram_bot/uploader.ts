@@ -159,9 +159,13 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
 
     // Schedule a processing job at the specified processing time
     const job = new CronJob(parsedDate, async () => {
+
+        console.log("Running queued job...");
         try {
             // Retrieve the file from the database
             const file = await configDb.fetch({ userId, fileKey });
+
+            console.log(file)
 
             // Check if the file is still in 'queued' status (it might have been processed or canceled by the user)
             if (file.items.length > 0 && file.items[0].status === 'queued') {
