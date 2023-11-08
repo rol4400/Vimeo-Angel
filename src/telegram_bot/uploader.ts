@@ -184,16 +184,17 @@ async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, 
 
 // Function to process a queued file
 async function processQueuedFile(ctx:any, bot:any, configDb:Base, filesDb:Drive, userSettings:UserSettings) {
-    const currentTime = new Date().getTime();
+    const currentTime = (new Date()).getTime();
   
     // Retrieve items that need processing
-    const itemsToProcess = (await configDb.fetch({
+    const itemsToProcess = await configDb.fetch({
       processingTime: { $lte: currentTime },
       status: 'queued',
-    })).items;
+    });
 
     console.log("Items to process")
     console.log(itemsToProcess);
+    console.log(currentTime);
 
     // Process each item
     for (const item of itemsToProcess) {
