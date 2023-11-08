@@ -74,7 +74,7 @@ app.use(busboy({
     highWaterMark: 2 * 1024 * 1024, // Set 2MiB buffer
 }));
 
-const uploadPath = path.join(__dirname, '/../uploads'); // Register the upload path
+const uploadPath = path.join(__dirname, '..', 'uploads'); // Register the upload path
 
 app.route('/upload').post((req, res, _next) => {
  
