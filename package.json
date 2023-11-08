@@ -9,7 +9,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
-    "start-prod-server": "pm2 start npm -- run start-dev-server",
+    "start-prod-server": "pm2 start npm run start-dev-server",
     "start-api-server": "export $(cat .env | xargs) && pm2 start ./td/bin/telegram-bot-api -- --local",
     "start-filemon": "electron src/folder_monitor/index.ts",
     "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css",
@@ -25,6 +25,7 @@
     "axios": "^1.6.0",
     "bottleneck": "^2.19.5",
     "chokidar": "^3.5.3",
+    "chrono-node": "^2.7.0",
     "cross-env": "^7.0.3",
     "deta": "^2.0.0",
     "dotenv": "^16.3.1",
