@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
-import { processUpload, enqueueFile } from "./uploader"
+import { processUpload, enqueueFile, testCutting } from "./uploader"
 import { v4 as uuidv4 } from 'uuid';
 
 import fs from 'fs';
@@ -76,6 +76,17 @@ app.use(busboy({
 }));
 
 const uploadPath = path.join(__dirname, '..', 'uploads'); // Register the upload path
+
+app.route('/test').post((req, _res, _next) => {
+
+    const filePath = req.body.path;
+
+    const fileExt = filePath.split('.').pop();
+    const fileName = uuidv4() + "." + fileExt;
+    
+    testCutting(filePath, fileName);
+
+})
 
 app.route('/upload').post((req, res, _next) => {
  

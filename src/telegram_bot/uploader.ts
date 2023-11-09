@@ -339,6 +339,16 @@ async function cutVideo(inputPath:string, outputPath:string, startTime?:string, 
     }
 }
 
+async function testCutting(inputPath:string, fileName:string) {
+
+    // Cut the video based on start and end times
+    const outputStoragePath = path.join(__dirname, '..', 'uploads');
+    const outputPath = `${outputStoragePath}\\${fileName}_cut.mp4`;
+    
+    cutVideo(inputPath, outputPath, "00:00:05", "00:01:00") 
+    console.log('Video cut successfully:', outputPath);
+}
+
 async function processUpload(ctx:any, bot:any, userSettings:UserSettings, promptSendVideo:Function, silent:boolean) {
     const userId = getUserId(ctx);
     const chatId:number = ctx.chat.id;
@@ -473,4 +483,4 @@ async function updateProgressMessage(chatId:number, bot:any, text:string) {
     }
 }
 
-export { processUpload, enqueueFile }
+export { processUpload, enqueueFile, testCutting }
