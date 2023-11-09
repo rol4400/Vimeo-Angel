@@ -79,7 +79,7 @@ const uploadPath = path.join(__dirname, '..', 'uploads'); // Register the upload
 
 app.route('/test').post((req, _res, _next) => {
 
-    const filePath = req.body.path;
+    const filePath = req.query.path!.toString();
 
     const fileExt = filePath.split('.').pop();
     const fileName = uuidv4() + "." + fileExt;
