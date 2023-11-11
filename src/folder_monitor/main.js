@@ -1,125 +1,106 @@
-require('dotenv').config();
-
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
-const chokidar = require('chokidar');
+const { app, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { Deta } = require('deta');
+const chokidar = require('chokidar');
+const axios = require('axios');
+const settings = require('electron-settings');
 
-const deta = Deta(process.env.DETA_PROJECT_KEY);
-const drive = deta.Drive('FileStorage'); 
+let mainWindow;
+let tray;
 
-// Ensure the directory for user data exists
-const userDataPath = app.getPath('userData');
-if (!fs.existsSync(userDataPath)) {
-  fs.mkdirSync(userDataPath);
-}
+app.on('ready', () => {
+    mainWindow = new BrowserWindow({
+        width: 800,
+        height: 600,
+        show: false,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js'),
+        },
+    });
 
-// Load saved settings
-let folderToMonitor = '';
-let selectedChatroom = '';
+    mainWindow.loadFile('index.html');
 
-const settingsFilePath = path.join(userDataPath, 'settings.json');
-try {
-  const data = fs.readFileSync(settingsFilePath);
-  const settings = JSON.parse(data);
-  folderToMonitor = settings.folderToMonitor || '';
-  selectedChatroom = settings.selectedChatroom || '';
-} catch (error) {
-  console.error('Error loading settings:', error);
-}
+    tray = new Tray(path.join(__dirname, 'icon.png'));
 
-function createWindow() {
-  const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  });
+    const contextMenu = Menu.buildFromTemplate([
+        { label: 'Show App', click: () => mainWindow.show() },
+        { label: 'Quit', click: () => app.quit() },
+    ]);
 
-  mainWindow.loadFile('index.html');
+    tray.setContextMenu(contextMenu);
+    tray.addListener("click", () => {
+        mainWindow.show();
+    })
 
-  mainWindow.on('closed', function () {
-    app.quit();
-  });
-}
+    mainWindow.on('close', (event) => {
+        event.preventDefault();
+        mainWindow.hide();
+    });
 
-app.whenReady().then(createWindow);
+    Promise.all([
+        settings.get('folderToMonitor'),
+        settings.get('host'),
+        settings.get('chatroom'),
+    ]).then(([folderToMonitor, host, chatroom]) => {
+        const appSettings = {
+            folderToMonitor: folderToMonitor,
+            host: host,
+            chatroom: chatroom,
+        };
 
-app.on('window-all-closed', function () {
-  if (process.platform !== 'darwin') app.quit();
+        // Start file monitoring
+        startFileMonitoring(appSettings);
+    }).catch((error) => {
+        console.error('Error resolving promises:', error.message);
+    });
 });
 
-app.on('activate', function () {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+ipcMain.on('save-settings', (event, settingsData) => {
+    settings.set('folderToMonitor', settingsData.folderToMonitor);
+    settings.set('host', settingsData.host);
+    settings.set('chatroom', settingsData.chatroom);
 });
 
-ipcMain.on('select-folder', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory'],
-  });
-
-  if (!result.canceled) {
-    folderToMonitor = result.filePaths[0];
-    mainWindow.webContents.send('update-folder', folderToMonitor);
-  }
-});
-
-ipcMain.on('refresh-chatrooms', () => {
-  // Placeholder for API request to load chatrooms
-  const chatrooms = ['Chatroom 1', 'Chatroom 2', 'Chatroom 3'];
-  mainWindow.webContents.send('update-chatrooms', chatrooms);
-});
-
-ipcMain.on('start-monitoring', () => {
-  if (folderToMonitor) {
-    startFileWatcher(folderToMonitor);
-    saveSettings();
-  } else {
-    dialog.showErrorBox('Error', 'Please select a folder to monitor.');
-  }
-});
-
-function startFileWatcher(folderToMonitor) {
-  // Watch the specified folder and its subdirectories for new MP4 files
-  const watcher = chokidar.watch(folderToMonitor, { ignored: /(^|[\/\\])\../, persistent: true, depth: 99 });
-
-  watcher.on('add', (filePath) => {
-    if (path.extname(filePath) === '.mp4') {
-      console.log(`New MP4 file detected: ${filePath}`);
-      sendFile(filePath);
-    }
-  });
-
-  watcher.on('error', (error) => {
-    console.error(`Watcher error: ${error}`);
-  });
-}
-
-async function sendFile(filePath) {
-  // Replace this with your actual processing logic
-  console.log(`Processing file: ${filePath}`);
-
-  // Upload the file to Deta space
-  try {
-    const fileData = fs.readFileSync(filePath);
-    const response = await drive.put(fileName, fileData);
-    console.log('File uploaded successfully:', response);
-  } catch (error) {
-    console.error('Error uploading file:', error);
-  }
-
-  // Trigger it to be sent to telegram
-  
-}
-
-function saveSettings() {
-  const settings = {
-    folderToMonitor,
-    selectedChatroom,
+ipcMain.on('get-settings', async (event) => {
+  const appSettings = {
+      folderToMonitor: await settings.get('folderToMonitor'),
+      host: await settings.get('host'),
+      chatroom: await settings.get('chatroom'),
   };
-  fs.writeFileSync(settingsFilePath, JSON.stringify(settings));
+
+  event.reply('send-settings', appSettings);
+});
+
+// Function to start monitoring the specified folder
+function startFileMonitoring(settings) {
+    const watcher = chokidar.watch(settings.folderToMonitor, { ignored: /^\./, persistent: true });
+
+    watcher.on('add', (filePath) => {
+        if (path.extname(filePath) === '.mp4') {
+            uploadFile(filePath, settings);
+        }
+    });
+}
+
+// Function to upload the file to the API
+async function uploadFile(filePath, settings) {
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(filePath));
+
+    try {
+        const response = await axios.post(`http://${settings.host}/upload`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+
+        if (response.status === 200) {
+            // File uploaded successfully, delete local file
+            fs.unlinkSync(filePath);
+        }
+    } catch (error) {
+        console.error('Error uploading file:', error.message);
+    }
 }
