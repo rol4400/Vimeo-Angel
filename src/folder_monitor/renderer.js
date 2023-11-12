@@ -18,12 +18,13 @@ function saveSettings() {
     window.electron.ipcRenderer.send('save-settings', settings);
 }
 
-window.electron.ipcRenderer.on('load-settings', (event, settings) => {
-    document.getElementById('folderInput').value = settings.folderToMonitor || '';
-    document.getElementById('chatroomSelect').value = settings.chatroom || '';
-    document.getElementById('hostInput').value = settings.host || '';
-});
+// window.electron.ipcRenderer.on('load-settings', (event, settings) => {
+//     document.getElementById('folderInput').value = settings.folderToMonitor || '';
+//     document.getElementById('chatroomSelect').value = settings.chatroom || '';
+//     document.getElementById('hostInput').value = settings.host || '';
+// });
 
+// Load the settings
 window.addEventListener('DOMContentLoaded', async () => {
   try {
       // Request settings from the main process
@@ -45,6 +46,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
           // Call your function to populate chatrooms here
           populateChatrooms(appSettings);
+
       } else {
           console.error('Invalid settings');
       }
@@ -57,8 +59,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 function selectFolder() {
   const folderSelector = document.getElementById('folderSelector');
   folderSelector.addEventListener('change', (event) => {
-      const selectedFolder = event.target.files[0].path;
-      document.getElementById('folderInput').value = selectedFolder;
+
+        // Use a bit of an exploit to get the full path
+        // TODO: Check if this works with no files in the folder
+        const folderName = folderSelector.files[0].webkitRelativePath.split("/")[0];
+        const folderPath = folderSelector.files[0].path.split(folderName)[0] + folderName
+        document.getElementById('folderInput').value = folderPath;
   });
 
   // Trigger a click on the hidden file input to open the file dialog

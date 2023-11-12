@@ -10,8 +10,7 @@ let tray;
 
 app.on('ready', () => {
     mainWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
+        useContentSize: true,
         show: false,
         webPreferences: {
             nodeIntegration: true,
@@ -41,8 +40,8 @@ app.on('ready', () => {
 
     Promise.all([
         settings.get('folderToMonitor'),
-        settings.get('host'),
         settings.get('chatroom'),
+        settings.get('host'),
     ]).then(([folderToMonitor, host, chatroom]) => {
         const appSettings = {
             folderToMonitor: folderToMonitor,
@@ -57,10 +56,11 @@ app.on('ready', () => {
     });
 });
 
+// Save the current settings
 ipcMain.on('save-settings', (event, settingsData) => {
     settings.set('folderToMonitor', settingsData.folderToMonitor);
-    settings.set('host', settingsData.host);
     settings.set('chatroom', settingsData.chatroom);
+    settings.set('host', settingsData.host);
 });
 
 ipcMain.on('get-settings', async (event) => {
@@ -75,7 +75,7 @@ ipcMain.on('get-settings', async (event) => {
 
 // Function to start monitoring the specified folder
 function startFileMonitoring(settings) {
-    const watcher = chokidar.watch(settings.folderToMonitor, { ignored: /^\./, persistent: true });
+    const watcher = chokidar.watch(settings.folderToMonitor, { ignored: /^\./, ignoreInitial: true, persistent: true });
 
     watcher.on('add', (filePath) => {
         if (path.extname(filePath) === '.mp4') {

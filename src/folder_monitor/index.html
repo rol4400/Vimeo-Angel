@@ -1,5 +1,5 @@
 <!-- index.html -->
-<html>
+<!-- <html>
 <head>
     <title>Your Electron App</title>
 </head>
@@ -10,6 +10,77 @@
     <label>Host: <input type="text" id="hostInput"></label><br>
     <button onclick="saveSettings()">Save Settings</button>
 
-    <script src="renderer.js"></script>
 </body>
+</html> -->
+
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>App Settings</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #f2f2f2;
+        }
+
+        .app-container {
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            background: white;
+        }
+
+        .app-container label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .app-container input, .app-container select, .app-container button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+        }
+
+        .app-container button {
+            background: lightskyblue;
+            color: white;
+            cursor: pointer;
+        }
+
+        .app-container button:disabled {
+            background: #ccc;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- <label>Folder to Monitor</label> -->
+        <!-- <input type="text" id="folderInput" readonly><input type="file" webkitdirectory id="folderSelector"> -->
+        
+        <label>Folder to Monitor: <input type="text" id="folderInput" readonly> <input type="file" id="folderSelector" webkitdirectory directory multiple style="display: none;"><button onclick="selectFolder()">Browse...</button></label>
+
+        <label>Chatroom to Send to</label>
+        <select id="chatroomSelect"></select>
+
+        <label>Host Server</label>
+        <input type="text" id="hostInput">
+
+        <button onclick="saveSettings()" id="saveRefresh">Save settings & Refresh</button>
+    </div>
+
+    <script src="renderer.js"></script>
+
+</body>
+
 </html>
