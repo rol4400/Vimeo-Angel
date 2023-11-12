@@ -42,11 +42,11 @@ app.on('ready', () => {
         settings.get('folderToMonitor'),
         settings.get('chatroom'),
         settings.get('host'),
-    ]).then(([folderToMonitor, host, chatroom]) => {
+    ]).then(([folderToMonitor, chatroom, host]) => {
         const appSettings = {
             folderToMonitor: folderToMonitor,
-            host: host,
             chatroom: chatroom,
+            host: host,
         };
 
         // Start file monitoring
@@ -58,24 +58,34 @@ app.on('ready', () => {
 
 // Save the current settings
 ipcMain.on('save-settings', (event, settingsData) => {
+
+    console.log(settingsData);
+
     settings.set('folderToMonitor', settingsData.folderToMonitor);
     settings.set('chatroom', settingsData.chatroom);
     settings.set('host', settingsData.host);
 });
 
+// Get the current settings
 ipcMain.on('get-settings', async (event) => {
-  const appSettings = {
-      folderToMonitor: await settings.get('folderToMonitor'),
-      host: await settings.get('host'),
-      chatroom: await settings.get('chatroom'),
-  };
+    const appSettings = {
+        folderToMonitor: await settings.get('folderToMonitor'),
+        chatroom: await settings.get('chatroom'),
+        host: await settings.get('host'),
+    };
 
-  event.reply('send-settings', appSettings);
+    // Send through a second ipc channel as a callback
+    event.reply('get-settings-callback', appSettings);
 });
 
 // Function to start monitoring the specified folder
 function startFileMonitoring(settings) {
-    const watcher = chokidar.watch(settings.folderToMonitor, { ignored: /^\./, ignoreInitial: true, persistent: true });
+    const watcher = chokidar.watch(settings.folderToMonitor, { 
+        ignored: /^\./, 
+        ignoreInitial: true, 
+        persistent: true,
+        awaitWriteFinish: true
+    });
 
     watcher.on('add', (filePath) => {
         if (path.extname(filePath) === '.mp4') {
@@ -88,7 +98,11 @@ function startFileMonitoring(settings) {
 async function uploadFile(filePath, settings) {
     const formData = new FormData();
     formData.append('file', fs.createReadStream(filePath));
+    formData.append('chatroom', settings.chatroom);
 
+    console.log(formData);
+
+    console.log(`http://${settings.host}/upload`);
     try {
         const response = await axios.post(`http://${settings.host}/upload`, formData, {
             headers: {
@@ -99,6 +113,8 @@ async function uploadFile(filePath, settings) {
         if (response.status === 200) {
             // File uploaded successfully, delete local file
             fs.unlinkSync(filePath);
+
+            console.log("Upload completed successfully")
         }
     } catch (error) {
         console.error('Error uploading file:', error.message);

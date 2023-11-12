@@ -93,6 +93,8 @@ app.route('/getChats').get((_req, res, _next) => {
 })
 
 app.route('/upload').post((req, res, _next) => {
+
+    console.log("Upload method called")
  
     req.pipe(req.busboy); // Pipe it trough busboy
  
@@ -131,11 +133,22 @@ app.route('/upload').post((req, res, _next) => {
                         }
                     });
                     res.sendStatus(200);
+                    return;
                 });
     
             })
 
         });
+    });
+
+    req.busboy.on('finish', () => {
+        console.log('File finished parsing');
+        res.status(200).send('File uploaded successfully');
+    });
+
+    req.busboy.on('error', (err) => {
+        console.error('Error during file upload:', err);
+        res.status(500).send('Internal Server Error');
     });
 });
 

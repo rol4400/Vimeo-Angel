@@ -1,7 +1,4 @@
-// renderer.js
-// const { ipcRenderer } = require('electron');
-// const settings = require('electron-settings');
-
+// Save the settings
 function saveSettings() {
     const folderToMonitor = document.getElementById('folderInput').value;
     const chatroom = document.getElementById('chatroomSelect').value;
@@ -13,49 +10,47 @@ function saveSettings() {
         host,
     };
 
+    // Save the settings
     console.log(settings);
-
     window.electron.ipcRenderer.send('save-settings', settings);
-}
 
-// window.electron.ipcRenderer.on('load-settings', (event, settings) => {
-//     document.getElementById('folderInput').value = settings.folderToMonitor || '';
-//     document.getElementById('chatroomSelect').value = settings.chatroom || '';
-//     document.getElementById('hostInput').value = settings.host || '';
-// });
+    // Refresh the chatrooms list if needed
+    populateChatrooms(settings)
+}
 
 // Load the settings
 window.addEventListener('DOMContentLoaded', async () => {
-  try {
-      // Request settings from the main process
-      window.electron.requestSettings();
+    try {
+        // Request settings from the main process
+        window.electron.ipcRenderer.send('get-settings');
 
-      // Receive settings from the main process
-      const appSettings = await new Promise((resolve) => {
-        window.electron.receiveSettings((settings) => {
-            resolve(settings);
-        });
-    })
+        // Receive settings from the main process
+        const appSettings = await new Promise((resolve) => {
+            window.electron.getSettingsCallback((settings) => {
+                resolve(settings);
+            });
+        })
 
-      // Check if appSettings is valid before accessing properties
-      if (appSettings) {
-          // Now you have access to appSettings, set the values in your input fields
-          document.getElementById('folderInput').value = appSettings.folderToMonitor || '';
-          document.getElementById('chatroomSelect').value = appSettings.chatroom || '';
-          document.getElementById('hostInput').value = appSettings.host || '';
+        // Check if appSettings is valid before accessing properties
+        if (appSettings) {
 
-          // Call your function to populate chatrooms here
-          populateChatrooms(appSettings);
+            // Call your function to populate chatrooms here
+            populateChatrooms(appSettings);
 
-      } else {
-          console.error('Invalid settings');
-      }
-  } catch (error) {
-      console.error('Error:', error.message);
-  }
+            // Now you have access to appSettings, set the values in your input fields
+            document.getElementById('folderInput').value = appSettings.folderToMonitor || '';
+            document.getElementById('chatroomSelect').value = appSettings.chatroom || '';
+            document.getElementById('hostInput').value = appSettings.host || '';
+
+        } else {
+            console.error('Invalid settings');
+        }
+    } catch (error) {
+        console.error('Error:', error.message);
+    }
 });
 
-// renderer.js
+// Register folder selection
 function selectFolder() {
   const folderSelector = document.getElementById('folderSelector');
   folderSelector.addEventListener('change', (event) => {
@@ -71,6 +66,7 @@ function selectFolder() {
   folderSelector.click();
 }
 
+// Refresh the chatrooms list
 async function populateChatrooms(appSettings) {
   try {
       // Check if appSettings is valid before proceeding
@@ -96,6 +92,9 @@ async function populateChatrooms(appSettings) {
                   option.text = chat;
                   chatroomSelect.appendChild(option);
               });
+
+            document.getElementById('chatroomSelect').value = appSettings.chatroom || '';
+
           } else {
               console.error('Error fetching chatrooms:', xhr.statusText);
           }
