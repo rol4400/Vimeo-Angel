@@ -132,8 +132,6 @@ app.route('/upload').post((req, res, _next) => {
                           ],
                         }
                     });
-                    res.sendStatus(200);
-                    return;
                 });
     
             })
