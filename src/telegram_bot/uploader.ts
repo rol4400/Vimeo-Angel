@@ -227,7 +227,6 @@ async function uploadToVimeo(localFilePath:string, userId:number, userSettings:U
 
         const name = `${formattedDate} ${userSetting.title || 'Title'}${leaderText}`;
 
-
         try {
             const videoUpload = await vimeoClient.upload(
                 localFilePath,

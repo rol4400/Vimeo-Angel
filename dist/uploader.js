@@ -26,7 +26,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.enqueueFile = exports.processUpload = void 0;
+exports.testCutting = exports.enqueueFile = exports.processUpload = void 0;
 const axios_1 = __importDefault(require("axios"));
 const util_1 = require("util");
 const child_process_1 = require("child_process");
@@ -238,6 +238,7 @@ async function uploadToVimeo(localFilePath, userId, userSettings, progressCallba
     });
 }
 async function deleteLocalFile(filePath) {
+    return;
     try {
         await fs_1.default.unlink(filePath, (err) => {
             if (err)
@@ -297,6 +298,14 @@ async function cutVideo(inputPath, outputPath, startTime, endTime) {
         throw error;
     }
 }
+async function testCutting(inputPath, fileName) {
+    // Cut the video based on start and end times
+    const outputStoragePath = path_1.default.join(__dirname, '..', 'uploads');
+    const outputPath = `${outputStoragePath}\\${fileName}_cut.mp4`;
+    cutVideo(inputPath, outputPath, "00:00:05", "00:01:00");
+    console.log('Video cut successfully:', outputPath);
+}
+exports.testCutting = testCutting;
 async function processUpload(ctx, bot, userSettings, promptSendVideo, silent) {
     const userId = (0, helpers_1.getUserId)(ctx);
     const chatId = ctx.chat.id;

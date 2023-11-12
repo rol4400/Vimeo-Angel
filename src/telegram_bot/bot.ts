@@ -88,6 +88,10 @@ app.route('/test').post((req, _res, _next) => {
 
 })
 
+app.route('/getChats').post((_req, res, _next) => {
+    res.send(destinations);
+})
+
 app.route('/upload').post((req, res, _next) => {
  
     req.pipe(req.busboy); // Pipe it trough busboy
