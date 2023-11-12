@@ -119,11 +119,14 @@ app.route('/upload').post((req, res, _next) => {
             genThumbnail(uploadPath + "/" + fileName, uploadPath + "/" + fileName + ".png" , '250x?', {
                 seek: "00:00:10.00"
             }).then(() => {
-                console.log('done!')
+
+                // Extract the chatroom number from the FormData
+                const chatroomParam = req.body.chatroom;
+                const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
 
                 // Prompt the user to edit the file
-                bot.telegram.sendPhoto("-4061080652", { source: uploadPath + "/" + fileName + ".png"  }).then(() => {
-                    bot.telegram.sendMessage("-4061080652", "A file has been uploaded. Whoever wants to process it please click here", {
+                bot.telegram.sendPhoto(chatroomId, { source: uploadPath + "/" + fileName + ".png"  }).then(() => {
+                    bot.telegram.sendMessage(chatroomId, "A file has been uploaded. Whoever wants to process it please click here", {
                         reply_markup: {
                           inline_keyboard: [
                             [

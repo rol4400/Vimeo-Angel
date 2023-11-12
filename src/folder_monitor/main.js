@@ -26,7 +26,7 @@ app.on('ready', () => {
 
     const contextMenu = Menu.buildFromTemplate([
         { label: 'Show App', click: () => mainWindow.show() },
-        { label: 'Quit', click: () => app.quit() },
+        { label: 'Quit', click: () => app.exit() },
     ]);
 
     tray.setContextMenu(contextMenu);
