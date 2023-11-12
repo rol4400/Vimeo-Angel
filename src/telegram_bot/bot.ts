@@ -121,7 +121,7 @@ app.route('/upload').post((req, res, _next) => {
             }).then(() => {
 
                 // Extract the chatroom number from the FormData
-                const chatroomParam = req.body.chatroom;
+                const chatroomParam = req.query.chatroom?.toString();
                 const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
 
                 // Prompt the user to edit the file
@@ -197,35 +197,6 @@ function checkAuthenticated(ctx:any, userId:string) {
     ctx.reply("Please give them this code: " + userId);
     return false;
 }
-
-// bot.command('authenticate', async (ctx) => {
-//     const userId = getUserId(ctx);
-  
-//     if (!userId) {
-//       console.error('Unable to determine user ID');
-//       return;
-//     }
-
-//     // const sessionString = userClients[userId] = client;
-//     // const session = new StringSession(sessionString);
-//     // var client = new TelegramClient(session, apiId, apiHash, {})
-
-//     // await client.connect();
-
-//     // await userClients[userId].sendCode("+61499561660").catch((error) => {
-//     //     console.error('Error during phone code request:', error);
-//     // });
-    
-  
-//     // Prompt the user to enter their phone number
-//     ctx.reply('📞 Please enter the phone number of this device (e.g. +61499 xxx xxx):',
-//     {
-//         reply_markup: {
-//             force_reply: true,
-//             input_field_placeholder: "Please use international format (e.g. +61499 xxx xxx)",
-//         },
-//     },);
-// });  
 
 // Function to handle new members (including the bot) joining a chat
 bot.on('new_chat_members', (ctx:any) => {

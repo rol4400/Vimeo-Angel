@@ -91,7 +91,7 @@ async function populateChatrooms(appSettings) {
                   option.value = chat;
                   option.text = chat;
                   chatroomSelect.appendChild(option);
-              });
+            });
 
             document.getElementById('chatroomSelect').value = appSettings.chatroom || '';
 

@@ -43,7 +43,7 @@ app.on('ready', () => {
         settings.get('folderToMonitor'),
         settings.get('chatroom'),
         settings.get('host'),
-    ]).then(([folderToMonitor, chatroom, host]) => {
+    ]).then(async ([folderToMonitor, chatroom, host]) => {
         const appSettings = {
             folderToMonitor: folderToMonitor,
             chatroom: chatroom,
@@ -51,7 +51,7 @@ app.on('ready', () => {
         };
 
         // Start file monitoring
-        startFileMonitoring(appSettings);
+        await startFileMonitoring(appSettings);
     }).catch((error) => {
         console.error('Error resolving promises:', error.message);
     });
@@ -79,6 +79,12 @@ ipcMain.on('get-settings', async (event) => {
     event.reply('get-settings-callback', appSettings);
 });
 
+// Reload the app
+ipcMain.on('reload-app', (event) => {
+    app.relaunch()
+    app.exit()
+})
+
 // Function to start monitoring the specified folder
 function startFileMonitoring(settings) {
     const watcher = chokidar.watch(settings.folderToMonitor, { 
@@ -96,21 +102,25 @@ function startFileMonitoring(settings) {
 }
 
 // Function to upload the file to the API
-async function uploadFile(filePath, settings) {
+async function uploadFile(filePath, appSettings) {
 
-    let data = new FormData();
-    data.append('file', fs.createReadStream(filePath));
-    data.append('chatroom', 'Vimeo Angel Admin Room,-4061080652');
+    let bodyData = new FormData();
+    bodyData.append('file', fs.createReadStream(filePath));
+
+    let queryData = new FormData();
+    queryData.append('chatroom', 'Vimeo Angel Admin Room,-4061080652');
+
+    console.log("Uploading file...")
 
     // Upload request configuration
     let config = {
         method: 'post',
         maxBodyLength: Infinity,
-        url: `http://${settings.host}/upload`,
+        url: `http://${appSettings.host}/upload?${queryParams.toString()}`,
         headers: { 
-                ...data.getHeaders()
+                ...bodyData.getHeaders()
         },
-        data : data
+        data : bodyData
     };
 
     // Try upoload the file
