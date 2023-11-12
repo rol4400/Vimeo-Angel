@@ -4,6 +4,7 @@ const fs = require('fs');
 const chokidar = require('chokidar');
 const axios = require('axios');
 const settings = require('electron-settings');
+const FormData = require('form-data');
 
 let mainWindow;
 let tray;
@@ -96,24 +97,30 @@ function startFileMonitoring(settings) {
 
 // Function to upload the file to the API
 async function uploadFile(filePath, settings) {
-    const formData = new FormData();
-    formData.append('file', fs.createReadStream(filePath));
-    formData.append('chatroom', settings.chatroom);
 
-    console.log(formData);
+    let data = new FormData();
+    data.append('file', fs.createReadStream(filePath));
+    data.append('chatroom', 'Vimeo Angel Admin Room,-4061080652');
 
-    console.log(`http://${settings.host}/upload`);
+    // Upload request configuration
+    let config = {
+        method: 'post',
+        maxBodyLength: Infinity,
+        url: `http://${settings.host}/upload`,
+        headers: { 
+                ...data.getHeaders()
+        },
+        data : data
+    };
+
+    // Try upoload the file
     try {
-        const response = await axios.post(`http://${settings.host}/upload`, formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
-        });
+        const response = await axios.request(config);
 
         if (response.status === 200) {
+
             // File uploaded successfully, delete local file
             fs.unlinkSync(filePath);
-
             console.log("Upload completed successfully")
         }
     } catch (error) {
