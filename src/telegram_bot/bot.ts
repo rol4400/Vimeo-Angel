@@ -88,7 +88,7 @@ app.route('/test').post((req, _res, _next) => {
 
 })
 
-app.route('/getChats').post((_req, res, _next) => {
+app.route('/getChats').get((_req, res, _next) => {
     res.send(destinations);
 })
 
