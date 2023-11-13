@@ -239,7 +239,7 @@ async function uploadToVimeo(localFilePath:string, userId:number, userSettings:U
                     console.log('Video uploaded successfully. Vimeo link: https://vimeo.com/manage/', uri);
 
                     // Set privacy settings with the provided password
-                    const password = userSetting.password || process.env.DEFAULT_VIMEO_PASSWORD; // Replace with the actual property from your settings
+                    const password = userSetting.password; // Replace with the actual property from your settings
                     await setPrivacySettings(uri.split('/').pop()!, password);
 
                     // Delete the local file after the upload is complete
@@ -288,7 +288,7 @@ async function deleteLocalFile(filePath:string) {
 async function setPrivacySettings(videoId:string, password?:string) {
 
     // Skip blank passwords and instead use the vimeo default
-    if (password === undefined) return;
+    if (password === undefined || password == "") return;
 
     return new Promise((resolve, reject) => {
         vimeoClient.request({

@@ -590,7 +590,7 @@ function sendToDestination(ctx, chatId, silent) {
     // Generate the telegram message 
     var message = `<${name}>
 ${userSetting.vimeoLink}
-Pass: ${userSetting.password || "<<default password>>"}`;
+Pass: ${userSetting.password || configDb.get("default-pass")}`;
     bot.telegram.sendMessage(chatId, message);
     if (!silent)
         ctx.reply(`Link has been sent to the chat`);
