@@ -2,7 +2,7 @@
   "name": "zoom-angel",
   "version": "1.0.0",
   "description": "For automatically managing zoom recordings and share links",
-  "main": "telegram_bot/bot.js",
+  "main": "./src/folder_monitor/main.js",
   "compilerOptions": {
     "esModuleInterop": true
   },

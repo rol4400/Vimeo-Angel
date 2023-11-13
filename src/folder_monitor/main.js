@@ -116,7 +116,7 @@ async function uploadFile(filePath, appSettings) {
     let config = {
         method: 'post',
         maxBodyLength: Infinity,
-        url: `http://${appSettings.host}/upload?${queryParams.toString()}`,
+        url: `http://${appSettings.host}/upload?${queryData.toString()}`,
         headers: { 
                 ...bodyData.getHeaders()
         },
