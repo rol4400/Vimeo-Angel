@@ -10,7 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
     "start-prod-server": "pm2 start ./dist/bot.js",
-    "start-api-server": "export $(cat .env | xargs) && pm2 start ./td/bin/telegram-bot-api -- --local",
+    "start-api-server": "($env:API_KEY, $env:OTHER_VARIABLE) -eq $null -or ($env:API_KEY -eq '' -or $env:OTHER_VARIABLE -eq '') -and (cat .env | ForEach-Object { [System.Environment]::SetEnvironmentVariable($_.Split('=')[0], $_.Split('=')[1]) }); pm2 start ./td/bin/telegram-bot-api -- --local",
     "start-filemon": "electron src/folder_monitor/main.js",
     "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css",
     "test-mtproto": "node ./src/telegram_bot/mtproto-test.js",
