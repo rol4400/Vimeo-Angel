@@ -77,17 +77,6 @@ app.use(busboy({
 
 const uploadPath = path.join(__dirname, '..', 'uploads'); // Register the upload path
 
-app.route('/test').post((req, _res, _next) => {
-
-    const filePath = req.query.path!.toString();
-
-    const fileExt = filePath.split('.').pop();
-    const fileName = uuidv4() + "." + fileExt;
-    
-    testCutting(filePath, fileName);
-
-})
-
 app.route('/getChats').get((_req, res, _next) => {
     res.send(destinations);
 })
@@ -222,6 +211,26 @@ bot.on('new_chat_members', (ctx:any) => {
             // Log the addition
             console.log(`Bot added to group: ${chatName} (ID: ${chatId})`);
         }
+    }
+});
+
+// Function to handle the bot being removed from a chat
+bot.on('left_chat_member', (ctx: any) => {
+    const chatId = ctx.message.chat.id;
+
+    // Check if the bot is the one being removed
+    if (ctx.message.left_chat_member.id === bot.botInfo!.id) {
+        // Remove the chat from destinations array
+        destinations = destinations.filter((dest: any) => dest[1] !== chatId.toString());
+
+        // Update the database
+        configDb.update(
+            { value: destinations },
+            "destinations",
+        );
+
+        // Log the removal
+        console.log(`Bot removed from group (ID: ${chatId})`);
     }
 });
 
