@@ -238,7 +238,6 @@ async function uploadToVimeo(localFilePath, userId, userSettings, progressCallba
     });
 }
 async function deleteLocalFile(filePath) {
-    return;
     try {
         await fs_1.default.unlink(filePath, (err) => {
             if (err)
@@ -301,7 +300,7 @@ async function cutVideo(inputPath, outputPath, startTime, endTime) {
 async function testCutting(inputPath, fileName) {
     // Cut the video based on start and end times
     const outputStoragePath = path_1.default.join(__dirname, '..', 'uploads');
-    const outputPath = `${outputStoragePath}\\${fileName}_cut.mp4`;
+    const outputPath = `${outputStoragePath}/${fileName}_cut.mp4`;
     cutVideo(inputPath, outputPath, "00:00:05", "00:01:00");
     console.log('Video cut successfully:', outputPath);
 }

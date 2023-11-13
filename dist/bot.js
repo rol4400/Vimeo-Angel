@@ -49,13 +49,11 @@ app.use((0, connect_busboy_1.default)({
     highWaterMark: 2 * 1024 * 1024, // Set 2MiB buffer
 }));
 const uploadPath = path_1.default.join(__dirname, '..', 'uploads'); // Register the upload path
-app.route('/test').post((req, _res, _next) => {
-    const filePath = req.query.path.toString();
-    const fileExt = filePath.split('.').pop();
-    const fileName = (0, uuid_1.v4)() + "." + fileExt;
-    (0, uploader_1.testCutting)(filePath, fileName);
+app.route('/getChats').get((_req, res, _next) => {
+    res.send(destinations);
 });
 app.route('/upload').post((req, res, _next) => {
+    console.log("Upload method called");
     req.pipe(req.busboy); // Pipe it trough busboy
     req.busboy.on('file', (_fieldname, file, fileInfo) => {
         console.log(`Upload of '${fileInfo.filename}' started`);
@@ -72,10 +70,12 @@ app.route('/upload').post((req, res, _next) => {
             genThumbnail(uploadPath + "/" + fileName, uploadPath + "/" + fileName + ".png", '250x?', {
                 seek: "00:00:10.00"
             }).then(() => {
-                console.log('done!');
+                // Extract the chatroom number from the FormData
+                const chatroomParam = req.query.chatroom?.toString();
+                const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
                 // Prompt the user to edit the file
-                bot.telegram.sendPhoto("-4061080652", { source: uploadPath + "/" + fileName + ".png" }).then(() => {
-                    bot.telegram.sendMessage("-4061080652", "A file has been uploaded. Whoever wants to process it please click here", {
+                bot.telegram.sendPhoto(chatroomId, { source: uploadPath + "/" + fileName + ".png" }).then(() => {
+                    bot.telegram.sendMessage(chatroomId, "A file has been uploaded. Whoever wants to process it please click here", {
                         reply_markup: {
                             inline_keyboard: [
                                 [
@@ -84,10 +84,17 @@ app.route('/upload').post((req, res, _next) => {
                             ],
                         }
                     });
-                    res.sendStatus(200);
                 });
             });
         });
+    });
+    req.busboy.on('finish', () => {
+        console.log('File finished parsing');
+        res.status(200).send('File uploaded successfully');
+    });
+    req.busboy.on('error', (err) => {
+        console.error('Error during file upload:', err);
+        res.status(500).send('Internal Server Error');
     });
 });
 // Middleware to check if the user has settings
@@ -128,28 +135,6 @@ function checkAuthenticated(ctx, userId) {
     ctx.reply("Please give them this code: " + userId);
     return false;
 }
-// bot.command('authenticate', async (ctx) => {
-//     const userId = getUserId(ctx);
-//     if (!userId) {
-//       console.error('Unable to determine user ID');
-//       return;
-//     }
-//     // const sessionString = userClients[userId] = client;
-//     // const session = new StringSession(sessionString);
-//     // var client = new TelegramClient(session, apiId, apiHash, {})
-//     // await client.connect();
-//     // await userClients[userId].sendCode("+61499561660").catch((error) => {
-//     //     console.error('Error during phone code request:', error);
-//     // });
-//     // Prompt the user to enter their phone number
-//     ctx.reply('📞 Please enter the phone number of this device (e.g. +61499 xxx xxx):',
-//     {
-//         reply_markup: {
-//             force_reply: true,
-//             input_field_placeholder: "Please use international format (e.g. +61499 xxx xxx)",
-//         },
-//     },);
-// });  
 // Function to handle new members (including the bot) joining a chat
 bot.on('new_chat_members', (ctx) => {
     const chatId = ctx.message.chat.id;
@@ -166,6 +151,19 @@ bot.on('new_chat_members', (ctx) => {
             // Log the addition
             console.log(`Bot added to group: ${chatName} (ID: ${chatId})`);
         }
+    }
+});
+// Function to handle the bot being removed from a chat
+bot.on('left_chat_member', (ctx) => {
+    const chatId = ctx.message.chat.id;
+    // Check if the bot is the one being removed
+    if (ctx.message.left_chat_member.id === bot.botInfo.id) {
+        // Remove the chat from destinations array
+        destinations = destinations.filter((dest) => dest[1] !== chatId.toString());
+        // Update the database
+        configDb.update({ value: destinations }, "destinations");
+        // Log the removal
+        console.log(`Bot removed from group (ID: ${chatId})`);
     }
 });
 // Handle video messages
@@ -599,9 +597,6 @@ Pass: ${userSetting.password || "<<default password>>"}`;
 }
 exports.sendToDestination = sendToDestination;
 // Start the bot and express server
-try {
-    app.listen(3000, () => console.log('API listening on port 3000'));
-    bot.launch();
-}
-catch (error) { }
+app.listen(3000, () => console.log('API listening on port 3000'));
+bot.launch();
 //# sourceMappingURL=bot.js.map
