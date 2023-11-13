@@ -759,7 +759,7 @@ function sendToDestination(ctx:any, chatId:string, silent:boolean) {
 
     var message = `<${name}>
 ${userSetting.vimeoLink}
-Pass: ${userSetting.password || "<<default password>>"}`;
+Pass: ${userSetting.password || configDb.get("default-pass")}`;
 
     bot.telegram.sendMessage(chatId, message)
 

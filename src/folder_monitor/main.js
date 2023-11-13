@@ -130,7 +130,7 @@ async function uploadFile(filePath, appSettings) {
         if (response.status === 200) {
 
             // File uploaded successfully, delete local file
-            fs.unlinkSync(filePath);
+            // fs.unlinkSync(filePath); TODO: What to do about deleting files
             console.log("Upload completed successfully")
         }
     } catch (error) {
