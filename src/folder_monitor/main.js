@@ -20,7 +20,7 @@ app.on('ready', () => {
         },
     });
 
-    mainWindow.loadFile('index.html');
+    mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
     tray = new Tray(path.join(__dirname, 'icon.png'));
 
