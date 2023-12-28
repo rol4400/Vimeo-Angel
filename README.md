@@ -1,6 +1,10 @@
 # Vimeo-Angel
 A bot for automatically processing video files from devices distributed across multiple networks, editing and compressing them, and uploading and distributing vimeo links in a user friendly chatbot format
 
+## Technical Report
+[Vimeo Angel.docx](https://github.com/rol4400/Vimeo-Angel/files/13783660/Vimeo.Angel.docx)
+
+## Demonstration Images
 ![image](https://github.com/rol4400/Vimeo-Angel/assets/12844299/85dfa1a7-7698-4310-92a2-a1b1a0db2160)
 
 ![image](https://github.com/rol4400/Vimeo-Angel/assets/12844299/8e7cdb41-1376-4507-8a16-48b673cb9893)
