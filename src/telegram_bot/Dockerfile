@@ -1,23 +1,24 @@
 FROM node:18
 
 # Create app directory
-RUN mkdir -p /usr/src/bot
+# RUN mkdir -p /usr/src/bot
 WORKDIR /usr/src/bot
 
 # Install app dependencies
 # A wildcard is used to ensure both package.json AND package-lock.json are copied
 # where available (npm@5+)
 
+# Install NPM and Typescript
 COPY package*.json ./
+RUN npm install && npm install typescript -g
 
-RUN npm run build
+# RUN file="$(ls -1 /tmp)" && echo $file
+# RUN tsc
 
-# Bundle app source
-
-COPY ../ .
 EXPOSE 5000
 EXPOSE 80
 EXPOSE 443
 EXPOSE 5222 
+
 # ENV NODE_ENV=production
-CMD [ "npm", "run", "start-prod-server" ]
+# CMD [ "npm", "run", "start-prod-server" ]

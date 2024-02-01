@@ -14,6 +14,7 @@ const express_1 = __importDefault(require("express"));
 const connect_busboy_1 = __importDefault(require("connect-busboy"));
 require("dotenv/config.js");
 const path_1 = __importDefault(require("path"));
+const tcp_port_used_1 = __importDefault(require("tcp-port-used"));
 const genThumbnail = require('simple-thumbnail');
 const bot = new telegraf_1.Telegraf(process.env.BOT_TOKEN, {
     telegram: {
@@ -597,6 +598,31 @@ Pass: ${userSetting.password || configDb.get("default-pass")}`;
 }
 exports.sendToDestination = sendToDestination;
 // Start the bot and express server
-app.listen(3000, () => console.log('API listening on port 3000'));
-bot.launch();
+var isPortTaken = function (port, fn) {
+    var net = require('net');
+    var tester = net.createServer()
+        .once('error', function (err) {
+        if (err.code != 'EADDRINUSE')
+            return fn(err);
+        fn(null, true);
+    })
+        .once('listening', function () {
+        tester.once('close', function () { fn(null, false); })
+            .close();
+    })
+        .listen(port);
+};
+tcp_port_used_1.default.check(3000, 'localhost').then(function (inUse) {
+    console.log(inUse);
+    if (!inUse) {
+        console.log("Port 3000 is not in use");
+        app.listen(3000, () => console.log('API listening on port 3000'));
+        bot.launch();
+    }
+    else {
+        console.warn("Port 3000 is in use");
+    }
+}, function (err) {
+    console.error('Error on check:', err.message);
+});
 //# sourceMappingURL=bot.js.map
