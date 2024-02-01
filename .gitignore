@@ -12,3 +12,5 @@ video_store/
 uploads/
 
 zoom-angel-win32-x64/
+
+src/telegram-bot-api/
