@@ -8,6 +8,7 @@ const telegraf_1 = require("telegraf");
 const deta_1 = require("deta");
 const helpers_1 = require("./helpers");
 const uploader_1 = require("./uploader");
+const folder_watcher_1 = require("./folder-watcher");
 const uuid_1 = require("uuid");
 const fs_1 = __importDefault(require("fs"));
 const express_1 = __importDefault(require("express"));
@@ -15,7 +16,6 @@ const connect_busboy_1 = __importDefault(require("connect-busboy"));
 require("dotenv/config.js");
 const path_1 = __importDefault(require("path"));
 const tcp_port_used_1 = __importDefault(require("tcp-port-used"));
-const genThumbnail = require('simple-thumbnail');
 const bot = new telegraf_1.Telegraf(process.env.BOT_TOKEN, {
     telegram: {
         apiRoot: `http://${process.env.BOT_URI}`
@@ -67,26 +67,12 @@ app.route('/upload').post((req, res, _next) => {
         // On finish of the upload
         fstream.on('close', () => {
             console.log(`Upload of '${fileInfo.filename}' finished`);
-            // Generate the thumbnail
-            genThumbnail(uploadPath + "/" + fileName, uploadPath + "/" + fileName + ".png", '250x?', {
-                seek: "00:00:10.00"
-            }).then(() => {
-                // Extract the chatroom number from the FormData
-                const chatroomParam = req.query.chatroom?.toString();
-                const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
-                // Prompt the user to edit the file
-                bot.telegram.sendPhoto(chatroomId, { source: uploadPath + "/" + fileName + ".png" }).then(() => {
-                    bot.telegram.sendMessage(chatroomId, "A file has been uploaded. Whoever wants to process it please click here", {
-                        reply_markup: {
-                            inline_keyboard: [
-                                [
-                                    { text: '🙋 Process File', callback_data: 'process_upload_' + fileName },
-                                ]
-                            ],
-                        }
-                    });
-                });
-            });
+            // Extract the chatroom number from the FormData
+            const chatroomParam = req.query.chatroom?.toString();
+            const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
+            // Generate the complete file path
+            const filePath = uploadPath + "/" + fileName;
+            (0, folder_watcher_1.processNewlyDetectedFile)(bot, filePath, Number(chatroomId));
         });
     });
     req.busboy.on('finish', () => {
@@ -234,7 +220,7 @@ bot.on('callback_query', (ctx) => {
         // Clear any previous videos
         userSettings[userId] = {};
         // Save the video file id
-        userSettings[userId].videoPath = uploadPath + "/" + fileName;
+        userSettings[userId].videoPath = process.env.DEFAULT_CHATROOM + "/" + fileName;
         userSettings[userId].videoFileId = fileName; // The id is just the filename in this case
         // Show settings panel
         showSettingsPanel(ctx);
@@ -598,26 +584,14 @@ Pass: ${userSetting.password || configDb.get("default-pass")}`;
 }
 exports.sendToDestination = sendToDestination;
 // Start the bot and express server
-var isPortTaken = function (port, fn) {
-    var net = require('net');
-    var tester = net.createServer()
-        .once('error', function (err) {
-        if (err.code != 'EADDRINUSE')
-            return fn(err);
-        fn(null, true);
-    })
-        .once('listening', function () {
-        tester.once('close', function () { fn(null, false); })
-            .close();
-    })
-        .listen(port);
-};
 tcp_port_used_1.default.check(3000, 'localhost').then(function (inUse) {
     console.log(inUse);
     if (!inUse) {
         console.log("Port 3000 is not in use");
         app.listen(3000, () => console.log('API listening on port 3000'));
         bot.launch();
+        // Start the file watcher on the configured path
+        (0, folder_watcher_1.startFileWatcher)(bot, process.env.WATCH_PATH);
     }
     else {
         console.warn("Port 3000 is in use");

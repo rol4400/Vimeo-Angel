@@ -1,7 +1,8 @@
 import { Telegraf, Markup } from 'telegraf';
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
-import { processUpload, enqueueFile, testCutting } from "./uploader"
+import { processUpload, enqueueFile } from "./uploader"
+import { startFileWatcher, processNewlyDetectedFile } from "./folder-watcher"
 import { v4 as uuidv4 } from 'uuid';
 
 import fs from 'fs';
@@ -11,8 +12,6 @@ import busboy from 'connect-busboy';
 import "dotenv/config.js";
 import path from 'path';
 import tcpPortUsed from 'tcp-port-used';
-
-const genThumbnail = require('simple-thumbnail')
 
 const bot = new Telegraf(process.env.BOT_TOKEN!, {
     telegram: {
@@ -104,30 +103,14 @@ app.route('/upload').post((req, res, _next) => {
         fstream.on('close', () => {
             console.log(`Upload of '${fileInfo.filename}' finished`);
 
+            // Extract the chatroom number from the FormData
+            const chatroomParam = req.query.chatroom?.toString();
+            const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
 
-            // Generate the thumbnail
-            genThumbnail(uploadPath + "/" + fileName, uploadPath + "/" + fileName + ".png" , '250x?', {
-                seek: "00:00:10.00"
-            }).then(() => {
+            // Generate the complete file path
+            const filePath = uploadPath + "/" + fileName;
 
-                // Extract the chatroom number from the FormData
-                const chatroomParam = req.query.chatroom?.toString();
-                const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
-
-                // Prompt the user to edit the file
-                bot.telegram.sendPhoto(chatroomId, { source: uploadPath + "/" + fileName + ".png"  }).then(() => {
-                    bot.telegram.sendMessage(chatroomId, "A file has been uploaded. Whoever wants to process it please click here", {
-                        reply_markup: {
-                          inline_keyboard: [
-                            [
-                              { text: '🙋 Process File', callback_data: 'process_upload_' + fileName },
-                            ]
-                          ],
-                        }
-                    });
-                });
-    
-            })
+            processNewlyDetectedFile(bot, filePath, Number(chatroomId));
 
         });
     });
@@ -319,7 +302,7 @@ bot.on('callback_query', (ctx:any) => {
         userSettings[userId] = {};
         
         // Save the video file id
-        userSettings[userId].videoPath = uploadPath + "/" + fileName;
+        userSettings[userId].videoPath = process.env.DEFAULT_CHATROOM! + "/" + fileName;
         userSettings[userId].videoFileId = fileName; // The id is just the filename in this case
         
         // Show settings panel
@@ -769,26 +752,15 @@ Pass: ${userSetting.password || configDb.get("default-pass")}`;
 }
 
 // Start the bot and express server
-var isPortTaken = function(port:any, fn:any) {
-    var net = require('net')
-    var tester = net.createServer()
-    .once('error', function (err:any) {
-      if (err.code != 'EADDRINUSE') return fn(err)
-      fn(null, true)
-    })
-    .once('listening', function() {
-      tester.once('close', function() { fn(null, false) })
-      .close()
-    })
-    .listen(port)
-  }
-
 tcpPortUsed.check(3000, 'localhost').then(function(inUse:any) {
     console.log(inUse);
     if (!inUse) {
         console.log("Port 3000 is not in use")
         app.listen(3000, () => console.log('API listening on port 3000'));
         bot.launch();
+        
+        // Start the file watcher on the configured path
+        startFileWatcher(bot, process.env.WATCH_PATH!)
     } else {
         console.warn("Port 3000 is in use");
     }

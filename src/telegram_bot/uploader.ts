@@ -11,6 +11,7 @@ import Base from 'deta/dist/types/base';
 import Drive from 'deta/dist/types/drive';
 import * as chrono from 'chrono-node';
 import { CronJob } from 'cron';
+import ffmpeg from 'fluent-ffmpeg';
 
 const exec = promisify(execCallback);
 
@@ -112,8 +113,12 @@ async function getFilePath(bot:any, userSettings:UserSettings, userId: string) {
 
         // Get the file from the telegram bot API
         const file = await bot.telegram.getFile(userSetting.videoFileId);
-        const inputStoragePath = path.join(__dirname, '..', '..', 'telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
+
+        console.log(file);
+
+        // const inputStoragePath = path.join('/var/lib/telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
         const inputPath = `${file.file_path}`;
+
         return inputPath;
     }
 }
@@ -212,7 +217,7 @@ async function processQueuedFile(ctx:any, bot:any, queueDb:Base, userSettings:Us
 }
 
 // Function to upload video to Vimeo with progress bar
-async function uploadToVimeo(localFilePath:string, userId:number, userSettings:UserSettings, progressCallback:Function) {
+async function uploadToVimeo(localFilePath:string, userId:number, chatId:number, userSettings:UserSettings, progressCallback:Function) {
     return new Promise(async (resolve, reject) => {
         
         // Get the user settings
@@ -243,7 +248,7 @@ async function uploadToVimeo(localFilePath:string, userId:number, userSettings:U
                     await setPrivacySettings(uri.split('/').pop()!, password);
 
                     // Delete the local file after the upload is complete
-                    await deleteLocalFile(localFilePath);
+                    await deleteLocalFile(localFilePath, chatId);
 
                     resolve(uri);
                 },
@@ -259,7 +264,7 @@ async function uploadToVimeo(localFilePath:string, userId:number, userSettings:U
                     console.error('Vimeo upload error:', error);
 
                     // Delete the local file after the upload fails
-                    deleteLocalFile(localFilePath);
+                    deleteLocalFile(localFilePath, chatId);
                     reject(error);
                 }
             );
@@ -267,13 +272,15 @@ async function uploadToVimeo(localFilePath:string, userId:number, userSettings:U
             console.error('Error uploading video to Vimeo:', error);
 
             // Delete the local file after the upload fails
-            deleteLocalFile(localFilePath);
+            deleteLocalFile(localFilePath, chatId);
             reject(error);
         }
     });
 }
 
-async function deleteLocalFile(filePath:string) {
+async function deleteLocalFile(filePath:string, chatId:number) {
+
+    console.log("Deleting file: " + filePath);
     try {
         await fs.unlink(filePath, (err) => {
             if (err) throw err;
@@ -282,6 +289,9 @@ async function deleteLocalFile(filePath:string) {
     } catch (deleteError) {
         console.error('Error deleting local file:', deleteError);
     }
+
+    // Reset the progress bars
+    progressBars[chatId] = [];
 }
 
 // Function to set privacy settings for the video on Vimeo
@@ -311,41 +321,49 @@ async function setPrivacySettings(videoId:string, password?:string) {
     });
 }
 
-// Function to cut the video using ffmpeg
-async function cutVideo(inputPath:string, outputPath:string, startTime?:string, endTime?:string) {
-
-    if (startTime === undefined && endTime === undefined) return inputPath;
-
+// Function to cut and compress the video using fluent-ffmpeg
+async function editVideo(inputPath: string, outputPath: string, chatId: number, bot:any, startTime?: string, endTime?: string) {
     try {
-        let command = `ffmpeg -i "${inputPath}"`;
+        let command = ffmpeg(inputPath);
 
-        if (startTime !== undefined) {
-            command += ` -ss ${startTime}`;
+        if (startTime) {
+            command = command.seekInput(startTime);
         }
 
-        if (endTime !== undefined) {
-            command += ` -to ${endTime}`;
+        if (endTime) {
+            command = command.duration(endTime);
         }
 
-        command += ` "${outputPath}"`;
+        command = command.output(outputPath);
 
-        await exec(command);
+        // Set video codec to libx265 with CRF for compression
+        command = command.videoCodec('libx265').addOption('-crf', '28');
+        command = command.audioCodec('aac') // Use AAC audio codec
+            .audioBitrate('128k') // Adjust audio bitrate as needed
+            .outputOptions([
+                '-preset veryfast', // Use a faster preset for encoding
+                '-movflags +faststart' // Enable faststart for better streaming
+            ]);
+
+        // Attach progress callback
+        command.on('progress', (progress) => {
+            const percentage = progress.percent.toFixed(2);
+            const progressBar = generateProgressBar(parseFloat(percentage));
+
+            // Update the progress message
+            updateProgressMessage(chatId, bot, `Processing video... ${percentage}%\n${progressBar}`);
+        });
+
+        await new Promise((resolve, reject) => {
+            command.on('end', resolve).on('error', reject).run();
+        });
+
         console.log('Video cut successfully:', outputPath);
         return outputPath;
     } catch (error) {
         console.error('Error processing video:', error);
         throw error;
     }
-}
-
-async function testCutting(inputPath:string, fileName:string) {
-
-    // Cut the video based on start and end times
-    const outputStoragePath = path.join(__dirname, '..', 'uploads');
-    const outputPath = `${outputStoragePath}/${fileName}_cut.mp4`;
-    
-    cutVideo(inputPath, outputPath, "00:00:05", "00:01:00") 
-    console.log('Video cut successfully:', outputPath);
 }
 
 async function processUpload(ctx:any, bot:any, userSettings:UserSettings, promptSendVideo:Function, silent:boolean) {
@@ -383,11 +401,10 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         const outputPath = `${outputStoragePath}\\${userSetting.videoFileId}_cut.mp4`;
         
         if (!silent) updateProgressMessage(chatId, bot, "Processing video...");
-        const resultPath = await cutVideo(inputPath, outputPath, userSetting.startTime, userSetting.endTime);
-        console.log('Video cut successfully:', outputPath);
+        const resultPath = await editVideo(inputPath, outputPath, chatId, bot, userSetting.startTime, userSetting.endTime);
 
         // Upload the video to vimeo
-        const vimeoUri = await uploadToVimeo(resultPath, userId, userSettings, async (percentage:number, uploadedMB:string, totalMB:string) => {
+        const vimeoUri = await uploadToVimeo(resultPath, userId, chatId, userSettings, async (percentage:number, uploadedMB:string, totalMB:string) => {
             const progressBar = generateProgressBar(percentage);
 
             const uploadedMBFormatted = !isNaN(parseFloat(uploadedMB)) ? parseFloat(uploadedMB).toFixed(2) : 'N/A';
@@ -455,7 +472,7 @@ function generateProgressBar(progress:number) {
 
 // Function to update progress message using editMessageText
 let lastUpdateTimestamp = 0;
-let minIntervalMs = 350;
+let minIntervalMs = 580;
 async function updateProgressMessage(chatId:number, bot:any, text:string) {
     try {
         const currentTime = Date.now();
@@ -482,4 +499,4 @@ async function updateProgressMessage(chatId:number, bot:any, text:string) {
     }
 }
 
-export { processUpload, enqueueFile, testCutting }
+export { processUpload, enqueueFile }

@@ -8,6 +8,11 @@ WORKDIR /usr/src/bot
 # A wildcard is used to ensure both package.json AND package-lock.json are copied
 # where available (npm@5+)
 
+# Install ffmpeg for video processing
+RUN apt-get -y update
+RUN apt-get -y upgrade
+RUN apt-get install -y ffmpeg
+
 # Install NPM and Typescript
 COPY package*.json ./
 RUN npm install && npm install typescript -g
