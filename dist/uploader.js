@@ -146,7 +146,7 @@ async function enqueueFile(ctx, userId, userSettings, processingTime, queueDb, b
         userId,
         fileSettings,
         fileKey,
-        processingTime: parsedDate.getTime(),
+        processingTime: parsedDate.getTime(), // Store processing time as a timestamp
         status: 'queued',
     };
     await queueDb.insert(item);

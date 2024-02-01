@@ -9,8 +9,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
-    "start-prod-server": "pm2 start ./dist/bot.js",
-    "start-api-server": "export $(cat .env | xargs) && pm2 start ./td/bin/telegram-bot-api -- --local",
+    "start-prod-server": "node ./dist/bot.js",
     "start-filemon": "electron src/folder_monitor/main.js",
     "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css",
     "test-mtproto": "node ./src/telegram_bot/mtproto-test.js",
@@ -33,7 +32,7 @@
     "dotenv": "^16.3.1",
     "electron": "^27.0.3",
     "electron-dialog": "^2.0.0",
-    "electron-settings": "^4.0.2",
+    "electron-settings": "^3.2.0",
     "express": "^4.18.2",
     "ffmpeg-installer": "^1.0.2",
     "fluent-ffmpeg": "^2.1.2",
@@ -43,15 +42,18 @@
     "path": "^0.12.7",
     "simple-thumbnail": "^1.6.5",
     "tailwindcss": "^3.3.5",
+    "tcp-port-used": "^1.0.2",
     "telegraf": "^4.15.0",
     "telegram": "^2.19.10",
     "tsc": "^2.0.4",
+    "typescript": "^5.3.3",
     "uuid": "^9.0.1",
     "vimeo": "^2.3.1"
   },
   "devDependencies": {
     "@types/connect-busboy": "^1.0.3",
     "@types/node": "^20.8.10",
+    "@types/tcp-port-used": "^1.0.4",
     "@types/uuid": "^9.0.7",
     "@types/vimeo": "^2.1.7"
   }
