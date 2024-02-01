@@ -1,7 +1,7 @@
 {
-  "name": "zoom-angel",
+  "name": "vimeo-angel",
   "version": "1.0.0",
-  "description": "For automatically managing zoom recordings and share links",
+  "description": "For automatically managing vimeo recordings and share links",
   "main": "./src/folder_monitor/main.js",
   "compilerOptions": {
     "esModuleInterop": true
@@ -10,7 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
     "start-prod-server": "pm2 start ./dist/bot.js",
-    "start-api-server": "($env:API_KEY, $env:OTHER_VARIABLE) -eq $null -or ($env:API_KEY -eq '' -or $env:OTHER_VARIABLE -eq '') -and (cat .env | ForEach-Object { [System.Environment]::SetEnvironmentVariable($_.Split('=')[0], $_.Split('=')[1]) }); pm2 start ./td/bin/telegram-bot-api -- --local",
+    "start-api-server": "export $(cat .env | xargs) && pm2 start ./td/bin/telegram-bot-api -- --local",
     "start-filemon": "electron src/folder_monitor/main.js",
     "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css",
     "test-mtproto": "node ./src/telegram_bot/mtproto-test.js",
@@ -38,12 +38,14 @@
     "ffmpeg-installer": "^1.0.2",
     "fluent-ffmpeg": "^2.1.2",
     "input": "^1.0.1",
+    "is-port-taken": "^0.0.3",
     "node-schedule": "^2.1.1",
     "path": "^0.12.7",
     "simple-thumbnail": "^1.6.5",
     "tailwindcss": "^3.3.5",
     "telegraf": "^4.15.0",
     "telegram": "^2.19.10",
+    "tsc": "^2.0.4",
     "uuid": "^9.0.1",
     "vimeo": "^2.3.1"
   },

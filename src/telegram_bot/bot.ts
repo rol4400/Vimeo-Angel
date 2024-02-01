@@ -10,6 +10,7 @@ import busboy from 'connect-busboy';
 
 import "dotenv/config.js";
 import path from 'path';
+import tcpPortUsed from 'tcp-port-used';
 
 const genThumbnail = require('simple-thumbnail')
 
@@ -768,7 +769,31 @@ Pass: ${userSetting.password || configDb.get("default-pass")}`;
 }
 
 // Start the bot and express server
-app.listen(3000, () => console.log('API listening on port 3000'));
-bot.launch();
+var isPortTaken = function(port:any, fn:any) {
+    var net = require('net')
+    var tester = net.createServer()
+    .once('error', function (err:any) {
+      if (err.code != 'EADDRINUSE') return fn(err)
+      fn(null, true)
+    })
+    .once('listening', function() {
+      tester.once('close', function() { fn(null, false) })
+      .close()
+    })
+    .listen(port)
+  }
+
+tcpPortUsed.check(3000, 'localhost').then(function(inUse:any) {
+    console.log(inUse);
+    if (!inUse) {
+        console.log("Port 3000 is not in use")
+        app.listen(3000, () => console.log('API listening on port 3000'));
+        bot.launch();
+    } else {
+        console.warn("Port 3000 is in use");
+    }
+}, function(err:any) {
+    console.error('Error on check:', err.message);
+});
 
 export { UserSettings, UserSetting, sendToDestination }
