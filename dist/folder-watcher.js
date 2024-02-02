@@ -5,15 +5,16 @@ const chokidar = require('chokidar');
 const path = require('path');
 const genThumbnail = require('simple-thumbnail');
 var FlakeId = require('flake-idgen');
-var fs = require('fs');
 var intformat = require('biguint-format');
-var flakeIdGen;
+const querystring = require('querystring');
+// const fs = require('fs-extra');
+const fs = require('fs').promises;
+const tmp = require('tmp');
+tmp.setGracefulCleanup(); // Delete files on exit
 // Accepted video file extensions
 const videoExtensions = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.ogg', '.m4v', '.3gp'];
 // Start monitoring the set directory for new video files
 function startFileWatcher(bot, folderToMonitor) {
-    // Start a new file ID generator
-    flakeIdGen = new FlakeId();
     // Watch the specified folder and its subdirectories for new MP4 files
     const watcher = chokidar.watch(folderToMonitor, {
         ignored: /(^|[\/\\])\../,
@@ -42,39 +43,44 @@ function startFileWatcher(bot, folderToMonitor) {
     });
 }
 exports.startFileWatcher = startFileWatcher;
-function processNewlyDetectedFile(bot, filePath, destinationChatId) {
-    // Generate a new filename
-    var newFileName = intformat(flakeIdGen.next(), 'dec');
-    // Original file properties
-    var fileExtension = path.extname(filePath);
-    var fileDirectory = path.dirname(filePath);
-    // Rename the video file to make sure it's appropiate
-    var newVideoFileName = fileDirectory + "/" + newFileName + fileExtension;
-    fs.rename(filePath, newVideoFileName, function (err) {
-        if (err)
-            console.log('ERROR: ' + err);
-    });
-    // Generate the thumbnail
+async function processNewlyDetectedFile(bot, filePath, destinationChatId) {
     try {
-        genThumbnail(newVideoFileName, fileDirectory + newFileName + ".png", '250x?', {
-            seek: "00:00:10.00"
-        }).then(async () => {
-            // Prompt the user to edit the file
-            await bot.telegram.sendPhoto(destinationChatId, { source: fileDirectory + newFileName + ".png" }).then(async () => {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                await bot.telegram.sendMessage(destinationChatId, "A file has been uploaded. Whoever wants to process it please click here", {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [
-                                { text: '🙋 Process File', callback_data: 'process_upload_' + newVideoFileName },
-                            ]
-                        ],
-                    }
-                });
+        // Create a temporary directory
+        const tempDirObj = tmp.dirSync({ unsafeCleanup: true });
+        const tempDir = tempDirObj.name;
+        console.log("Temp Dir: " + tempDir);
+        // Extract the original filename without spaces and special characters
+        const newFileName = Date.now().toString();
+        const newFilePath = path.join(tempDir, newFileName);
+        // Copy the video file to the temporary directory
+        await fs.copyFile(filePath, newFilePath);
+        // Generate the thumbnail in the temporary directory
+        const thumbnailFileName = 'newFileName-thumbnail.png'; // or generate a unique name here if needed
+        const thumbnailFilePath = path.join(tempDir, thumbnailFileName);
+        await genThumbnail(newFilePath, thumbnailFilePath, '250x?', {
+            seek: '00:00:10.00'
+        });
+        // URL encode the filename before using it in callback_data
+        const encodedFilePath = querystring.escape(newFilePath);
+        console.log("Encoded file name: " + encodedFilePath);
+        // Prompt the user to edit the file
+        await bot.telegram.sendPhoto(destinationChatId, { source: thumbnailFilePath }).then(async () => {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            // Use the temporary directory and dynamic filename in the callback_data
+            await bot.telegram.sendMessage(destinationChatId, "A file has been uploaded. Whoever wants to process it please click here", {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '🙋 Process File', callback_data: 'process_upload_' + encodedFilePath },
+                        ]
+                    ],
+                }
             });
         });
     }
-    catch (e) { } // Ignore errors that occur when too many files are detected at once
+    catch (e) {
+        console.error('Error processing newly detected file:', e);
+    }
 }
 exports.processNewlyDetectedFile = processNewlyDetectedFile;
 //# sourceMappingURL=folder-watcher.js.map

@@ -18,7 +18,7 @@ services:
         volumes:
             - ./:/usr/src/bot
             - ./telegram-bot-api-data:/var/lib/telegram-bot-api
-            - C:\Users\rol44\Videos\Recordings:/var/lib/telegram-bot-watch
+            - C:\Users\rol44\Videos\Recordings:/var/lib/telegram-bot-api/watch
         entrypoint: ["bash", "-c", "tsc && npm run start-prod-server"]
     telegram-bot-api:
         image: aiogram/telegram-bot-api:latest

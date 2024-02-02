@@ -353,8 +353,9 @@ async function processUpload(ctx, bot, userSettings, promptSendVideo, silent) {
                 updateProgressMessage(chatId, bot, `Uploading to Vimeo... ${percentage}% (${uploadedMBFormatted} MB / ${parseFloat(totalMB).toFixed(2)} MB)\n${progressBar}`);
         });
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
-        if (!silent)
-            await ctx.reply(`Video uploaded successfully. Vimeo link: https://vimeo.com/manage${vimeoUri}`);
+        if (!silent) {
+            sendWithRetry(ctx, `Video uploaded successfully. Vimeo link: https://vimeo.com/manage${vimeoUri}`);
+        }
         userSetting.vimeoLink = `https://vimeo.com/manage${vimeoUri}`;
         // Prompt user to send the link to the designated chatroom
         if (!silent) {
@@ -400,7 +401,7 @@ function generateProgressBar(progress) {
 }
 // Function to update progress message using editMessageText
 let lastUpdateTimestamp = 0;
-let minIntervalMs = 580;
+let minIntervalMs = 3500;
 async function updateProgressMessage(chatId, bot, text) {
     try {
         const currentTime = Date.now();
@@ -424,5 +425,23 @@ async function updateProgressMessage(chatId, bot, text) {
     catch (error) {
         console.error('Error updating progress message:', error);
     }
+}
+async function sendWithRetry(ctx, message, retryInterval = 3000, maxRetries = 50) {
+    let attempts = 0;
+    while (attempts < maxRetries) {
+        try {
+            // Attempt to send the message
+            await ctx.reply(message);
+            console.log('Message sent successfully.');
+            return; // Exit the loop if successful
+        }
+        catch (error) {
+            console.error(`Error sending message: ${error}`);
+            // Increment attempts and wait for the retry interval
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, retryInterval));
+        }
+    }
+    console.error('Max retries reached. Message not sent.');
 }
 //# sourceMappingURL=uploader.js.map

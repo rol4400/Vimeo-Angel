@@ -1,4 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions';
+
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
 import { processUpload, enqueueFile } from "./uploader"
@@ -13,17 +16,26 @@ import "dotenv/config.js";
 import path from 'path';
 import tcpPortUsed from 'tcp-port-used';
 
+import querystring from 'querystring';
+
+// Default telegram bot handler
 const bot = new Telegraf(process.env.BOT_TOKEN!, {
     telegram: {
       apiRoot: `http://${process.env.BOT_URI}`
     }
-  });
+});
+
+// MTPROTO enabled Telegram User Client
+// This gets past many restrictions such as the rate limiting on messages
+// const apiId = parseInt(process.env.TELEGRAM_API_ID!);
+// const apiHash = process.env.TELEGRAM_API_HASH!;
+// const session = new StringSession(process.env.TELE_STR_SESSION);
+// const user_bot = new TelegramClient(session, apiId, apiHash, {});
 
 // Deta space data storage
 const detaInstance = Deta();  //instantiate with Data Key or env DETA_PROJECT_KEY
 const configDb = detaInstance.Base("Configuration");
 const queueDb = detaInstance.Base("QueuedFiles");
-const filesDb = detaInstance.Drive("FileStorage");
 
 // // Telegram MTPROTO API Configuration
 // import { Api, TelegramClient } from 'telegram';
@@ -296,14 +308,14 @@ bot.on('callback_query', (ctx:any) => {
         
         if (!checkAuthenticated(ctx, userId)) { return; }
         
-        const fileName = match[1];
-
+        const filePath = querystring.unescape(match[1]);
+    
         // Clear any previous videos
         userSettings[userId] = {};
         
         // Save the video file id
-        userSettings[userId].videoPath = process.env.DEFAULT_CHATROOM! + "/" + fileName;
-        userSettings[userId].videoFileId = fileName; // The id is just the filename in this case
+        userSettings[userId].videoPath = filePath;
+        userSettings[userId].videoFileId = path.basename(filePath); // The id is just the filename in this case
         
         // Show settings panel
         showSettingsPanel(ctx);
@@ -753,7 +765,6 @@ Pass: ${userSetting.password || configDb.get("default-pass")}`;
 
 // Start the bot and express server
 tcpPortUsed.check(3000, 'localhost').then(function(inUse:any) {
-    console.log(inUse);
     if (!inUse) {
         console.log("Port 3000 is not in use")
         app.listen(3000, () => console.log('API listening on port 3000'));

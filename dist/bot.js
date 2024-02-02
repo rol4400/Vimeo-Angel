@@ -16,16 +16,23 @@ const connect_busboy_1 = __importDefault(require("connect-busboy"));
 require("dotenv/config.js");
 const path_1 = __importDefault(require("path"));
 const tcp_port_used_1 = __importDefault(require("tcp-port-used"));
+const querystring_1 = __importDefault(require("querystring"));
+// Default telegram bot handler
 const bot = new telegraf_1.Telegraf(process.env.BOT_TOKEN, {
     telegram: {
         apiRoot: `http://${process.env.BOT_URI}`
     }
 });
+// MTPROTO enabled Telegram User Client
+// This gets past many restrictions such as the rate limiting on messages
+// const apiId = parseInt(process.env.TELEGRAM_API_ID!);
+// const apiHash = process.env.TELEGRAM_API_HASH!;
+// const session = new StringSession(process.env.TELE_STR_SESSION);
+// const user_bot = new TelegramClient(session, apiId, apiHash, {});
 // Deta space data storage
 const detaInstance = (0, deta_1.Deta)(); //instantiate with Data Key or env DETA_PROJECT_KEY
 const configDb = detaInstance.Base("Configuration");
 const queueDb = detaInstance.Base("QueuedFiles");
-const filesDb = detaInstance.Drive("FileStorage");
 // // Telegram MTPROTO API Configuration
 // import { Api, TelegramClient } from 'telegram';
 // import { StringSession } from 'telegram/sessions';
@@ -216,12 +223,12 @@ bot.on('callback_query', (ctx) => {
         if (!checkAuthenticated(ctx, userId)) {
             return;
         }
-        const fileName = match[1];
+        const filePath = querystring_1.default.unescape(match[1]);
         // Clear any previous videos
         userSettings[userId] = {};
         // Save the video file id
-        userSettings[userId].videoPath = process.env.DEFAULT_CHATROOM + "/" + fileName;
-        userSettings[userId].videoFileId = fileName; // The id is just the filename in this case
+        userSettings[userId].videoPath = filePath;
+        userSettings[userId].videoFileId = path_1.default.basename(filePath); // The id is just the filename in this case
         // Show settings panel
         showSettingsPanel(ctx);
         return;
@@ -585,7 +592,6 @@ Pass: ${userSetting.password || configDb.get("default-pass")}`;
 exports.sendToDestination = sendToDestination;
 // Start the bot and express server
 tcp_port_used_1.default.check(3000, 'localhost').then(function (inUse) {
-    console.log(inUse);
     if (!inUse) {
         console.log("Port 3000 is not in use");
         app.listen(3000, () => console.log('API listening on port 3000'));
