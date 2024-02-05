@@ -37,6 +37,7 @@ const bot_1 = require("./bot");
 const chrono = __importStar(require("chrono-node"));
 const cron_1 = require("cron");
 const fluent_ffmpeg_1 = __importDefault(require("fluent-ffmpeg"));
+const querystring_1 = __importDefault(require("querystring"));
 const exec = (0, util_1.promisify)(child_process_1.exec);
 // Vimeo client credentials
 const vimeo_1 = require("vimeo");
@@ -135,11 +136,11 @@ async function getFilePath(userSettings, userId) {
             const file = (await axios_1.default.get(url, {
                 // Adjust timeout as needed, set to 0 for no timeout
                 timeout: 0,
-            })).data;
+            }));
             console.log("getFile Response:");
             console.log(file);
             // const inputStoragePath = path.join('/var/lib/telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
-            const inputPath = `${file.file_path}`;
+            const inputPath = `${file.data.result.file_path}`;
             return inputPath;
         }
         catch (error) {
@@ -152,27 +153,18 @@ async function getFilePath(userSettings, userId) {
 // Enqueue a file for later processing
 async function enqueueFile(ctx, userId, userSettings, processingTime, queueDb, bot) {
     // Setup input variables
-    let fileKey;
     const filePath = await getFilePath(userSettings, userId);
+    const fileKey = querystring_1.default.escape(filePath);
     const fileSettings = userSettings[userId];
     // Generate the date of processing using natural language
     const parsedDate = chrono.parseDate(processingTime);
     console.log("Queueing job for:");
     console.log(parsedDate);
-    try {
-        // Get the file name from the file path
-        const fileName = path_1.default.basename(filePath);
-        // Upload the file to Deta Drive
-        // TODO: Solve this
-        // fileKey = await filesDb.put(fileName, { path: filePath });
-    }
-    catch (error) {
-        console.error('Error uploading file to Deta Drive:', error);
-        return;
-    }
+    // Construct a QueueItem to store the required information in the queue
     const item = {
         userId,
         fileSettings,
+        filePath,
         fileKey,
         processingTime: parsedDate.getTime(), // Store processing time as a timestamp
         status: 'queued',
@@ -182,13 +174,23 @@ async function enqueueFile(ctx, userId, userSettings, processingTime, queueDb, b
     const job = new cron_1.CronJob(parsedDate, async () => {
         console.log("Running queued job...");
         try {
-            // Retrieve the file from the database
-            const file = await queueDb.fetch({ userId, fileKey });
-            console.log(file);
-            // Check if the file is still in 'queued' status (it might have been processed or canceled by the user)
-            if (file.items.length > 0 && file.items[0].status === 'queued') {
-                // Process the queued file
-                await processQueuedFile(ctx, bot, queueDb, userSettings);
+            // Retrieve the first file from the database with 'queued' status
+            const fileToUpdate = await queueDb.fetch({ userId, status: 'queued' }, { limit: 1 });
+            if (fileToUpdate.items.length > 0) {
+                const file = fileToUpdate.items[0];
+                // Check if file is not undefined before updating
+                if (file) {
+                    // Update the status to 'processing'
+                    file.status = 'processing';
+                    await queueDb.update(file, fileToUpdate.last);
+                    console.log("Running queued file:");
+                    console.log(file);
+                    // Process the queued file
+                    await processQueuedFile(ctx, bot, queueDb, userSettings);
+                    // The cron job will only process one file at a time
+                    // Delete the processed item from the database
+                    await queueDb.delete(fileToUpdate.last);
+                }
             }
         }
         catch (error) {

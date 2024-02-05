@@ -10,6 +10,7 @@ import Base from 'deta/dist/types/base';
 import * as chrono from 'chrono-node';
 import { CronJob } from 'cron';
 import ffmpeg from 'fluent-ffmpeg';
+import querystring from 'querystring';
 
 const exec = promisify(execCallback);
 
@@ -138,14 +139,14 @@ async function getFilePath(userSettings:UserSettings, userId: string) {
             const file = (await axios.get(url, {
               // Adjust timeout as needed, set to 0 for no timeout
               timeout: 0,
-            })).data;
+            }));
         
            
             console.log("getFile Response:");
             console.log(file);
     
             // const inputStoragePath = path.join('/var/lib/telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
-            const inputPath = `${file.file_path}`;
+            const inputPath = `${file.data.result.file_path}`;
     
             return inputPath;
         
@@ -161,68 +162,72 @@ async function getFilePath(userSettings:UserSettings, userId: string) {
 interface QueueItem {
     userId: string;
     fileSettings: UserSetting;
+    filePath: string,
     fileKey: string;
     processingTime: number;
     status: string;
   }
 
 // Enqueue a file for later processing
-async function enqueueFile(ctx:any, userId: string, userSettings: UserSettings, processingTime: string, queueDb: Base, bot:any) {
+async function enqueueFile(ctx: any, userId: string, userSettings: UserSettings, processingTime: string, queueDb: Base, bot: any) {
 
     // Setup input variables
-    let fileKey:any;
     const filePath = await getFilePath(userSettings, userId);
+    const fileKey = querystring.escape(filePath);
     const fileSettings = userSettings[userId];
-
+  
     // Generate the date of processing using natural language
     const parsedDate = chrono.parseDate(processingTime);
     console.log("Queueing job for:");
     console.log(parsedDate);
-
-    try {
-        // Get the file name from the file path
-        const fileName = path.basename(filePath);
-    
-        // Upload the file to Deta Drive
-        // TODO: Solve this
-        // fileKey = await filesDb.put(fileName, { path: filePath });
-
-    } catch (error) {
-        console.error('Error uploading file to Deta Drive:', error);
-        return;
-    }
-
-    const item:QueueItem = {
+  
+    // Construct a QueueItem to store the required information in the queue
+    const item: QueueItem = {
       userId,
       fileSettings,
+      filePath,
       fileKey,
       processingTime: parsedDate.getTime(), // Store processing time as a timestamp
       status: 'queued',
     };
   
     await queueDb.insert(item as unknown as DetaType);
-
+  
     // Schedule a processing job at the specified processing time
     const job = new CronJob(parsedDate, async () => {
-
-        console.log("Running queued job...");
-        try {
-            // Retrieve the file from the database
-            const file = await queueDb.fetch({ userId, fileKey });
-
-            console.log(file)
-
-            // Check if the file is still in 'queued' status (it might have been processed or canceled by the user)
-            if (file.items.length > 0 && file.items[0].status === 'queued') {
-                // Process the queued file
-                await processQueuedFile(ctx, bot, queueDb, userSettings);
-            }
-        } catch (error) {
-            console.error('Error processing queued file:', error);
-            // Handle the error as needed
+  
+      console.log("Running queued job...");
+      try {
+        // Retrieve the first file from the database with 'queued' status
+        const fileToUpdate = await queueDb.fetch({ userId, status: 'queued' }, { limit: 1 });
+  
+        if (fileToUpdate.items.length > 0) {
+          const file = fileToUpdate.items[0];
+  
+          // Check if file is not undefined before updating
+          if (file) {
+            // Update the status to 'processing'
+            file.status = 'processing';
+            await queueDb.update(file, fileToUpdate.last!);
+  
+            console.log("Running queued file:")
+            console.log(file);
+  
+            // Process the queued file
+            await processQueuedFile(ctx, bot, queueDb, userSettings);
+  
+            // The cron job will only process one file at a time
+  
+            // Delete the processed item from the database
+            await queueDb.delete(fileToUpdate.last!);
+          }
         }
+      } catch (error) {
+        console.error('Error processing queued file:', error);
+        // Handle the error as needed
+      }
     });
-
+  
     // Start the cron job
     job.start();
 }
