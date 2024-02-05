@@ -1,7 +1,11 @@
 import { Telegraf, Markup } from 'telegraf';
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions';
+
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
-import { processUpload, enqueueFile, testCutting } from "./uploader"
+import { processUpload, enqueueFile, getCurrentDate } from "./uploader"
+import { startFileWatcher, processNewlyDetectedFile } from "./folder-watcher"
 import { v4 as uuidv4 } from 'uuid';
 
 import fs from 'fs';
@@ -12,19 +16,26 @@ import "dotenv/config.js";
 import path from 'path';
 import tcpPortUsed from 'tcp-port-used';
 
-const genThumbnail = require('simple-thumbnail')
+import querystring from 'querystring';
 
+// Default telegram bot handler
 const bot = new Telegraf(process.env.BOT_TOKEN!, {
     telegram: {
       apiRoot: `http://${process.env.BOT_URI}`
     }
-  });
+});
+
+// MTPROTO enabled Telegram User Client
+// This gets past many restrictions such as the rate limiting on messages
+// const apiId = parseInt(process.env.TELEGRAM_API_ID!);
+// const apiHash = process.env.TELEGRAM_API_HASH!;
+// const session = new StringSession(process.env.TELE_STR_SESSION);
+// const user_bot = new TelegramClient(session, apiId, apiHash, {});
 
 // Deta space data storage
 const detaInstance = Deta();  //instantiate with Data Key or env DETA_PROJECT_KEY
 const configDb = detaInstance.Base("Configuration");
 const queueDb = detaInstance.Base("QueuedFiles");
-const filesDb = detaInstance.Drive("FileStorage");
 
 // // Telegram MTPROTO API Configuration
 // import { Api, TelegramClient } from 'telegram';
@@ -104,30 +115,14 @@ app.route('/upload').post((req, res, _next) => {
         fstream.on('close', () => {
             console.log(`Upload of '${fileInfo.filename}' finished`);
 
+            // Extract the chatroom number from the FormData
+            const chatroomParam = req.query.chatroom?.toString();
+            const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
 
-            // Generate the thumbnail
-            genThumbnail(uploadPath + "/" + fileName, uploadPath + "/" + fileName + ".png" , '250x?', {
-                seek: "00:00:10.00"
-            }).then(() => {
+            // Generate the complete file path
+            const filePath = uploadPath + "/" + fileName;
 
-                // Extract the chatroom number from the FormData
-                const chatroomParam = req.query.chatroom?.toString();
-                const chatroomId = chatroomParam ? chatroomParam.split(',')[1] : '';
-
-                // Prompt the user to edit the file
-                bot.telegram.sendPhoto(chatroomId, { source: uploadPath + "/" + fileName + ".png"  }).then(() => {
-                    bot.telegram.sendMessage(chatroomId, "A file has been uploaded. Whoever wants to process it please click here", {
-                        reply_markup: {
-                          inline_keyboard: [
-                            [
-                              { text: '🙋 Process File', callback_data: 'process_upload_' + fileName },
-                            ]
-                          ],
-                        }
-                    });
-                });
-    
-            })
+            processNewlyDetectedFile(bot, filePath, Number(chatroomId));
 
         });
     });
@@ -313,14 +308,14 @@ bot.on('callback_query', (ctx:any) => {
         
         if (!checkAuthenticated(ctx, userId)) { return; }
         
-        const fileName = match[1];
-
+        const filePath = querystring.unescape(match[1]);
+    
         // Clear any previous videos
         userSettings[userId] = {};
         
         // Save the video file id
-        userSettings[userId].videoPath = uploadPath + "/" + fileName;
-        userSettings[userId].videoFileId = fileName; // The id is just the filename in this case
+        userSettings[userId].videoPath = filePath;
+        userSettings[userId].videoFileId = path.basename(filePath); // The id is just the filename in this case
         
         // Show settings panel
         showSettingsPanel(ctx);
@@ -536,9 +531,12 @@ function showSettingsPanel(ctx:any) {
                 ? `\n⏰ End Time: ${formatTime(userSetting.endTime)}`
                 : '';
 
+    // Get the date with default option
+    const formattedDate = userSetting.date || getCurrentDate();
+   
     // The title of the message
     const uploadingVideoMessage = (userSetting.videoFileId || userSetting.videoPath)
-    ? `📹 Video: ${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
+    ? `📹 Video: ${formattedDate} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
     : '🚫 No video uploaded yet. Please upload a video to start.';
 
     // Generate the buttons
@@ -711,31 +709,24 @@ function promptSendVideo(ctx:any) {
 
     const destinationExists = userSettings[userId].destination !== undefined;
 
+    // Send the link automatically if we have a destination set to send to
+    if (destinationExists) {
+        sendToDestination(ctx, userSettings[userId].destination!, false);
+    }
+
     // Prompt user to send the link to the designated chatroom
-    const sendLinkOptions = Markup.inlineKeyboard([
+    const keyboardOptions = Markup.inlineKeyboard([
         [
-            Markup.button.callback('✅ Send', 'send_link'),
-            Markup.button.callback('Select Another Room', 'select_different_room'),
+            Markup.button.callback('Send to a Room', 'select_different_room'),
         ],
         [
             Markup.button.callback('❌ Cancel', 'cancel'),
         ]
     ]);
 
-    const keyboardOptions = destinationExists
-        ? sendLinkOptions
-        : Markup.inlineKeyboard([
-            [
-                Markup.button.callback('Send to a Room', 'select_different_room'),
-            ],
-            [
-                Markup.button.callback('❌ Cancel', 'cancel'),
-            ]
-        ]);
-
     const message = destinationExists
-        ? 'Send the Vimeo link to the designated chatroom?'
-        : 'Do you want to send the link to a chatroom?.';
+        ? 'Link sent to the designated chatroom. Do you want to send to another?'
+        : 'Do you want to send the link to a chatroom?';
 
     ctx.replyWithMarkdown(message, keyboardOptions);
 }
@@ -769,26 +760,14 @@ Pass: ${userSetting.password || configDb.get("default-pass")}`;
 }
 
 // Start the bot and express server
-var isPortTaken = function(port:any, fn:any) {
-    var net = require('net')
-    var tester = net.createServer()
-    .once('error', function (err:any) {
-      if (err.code != 'EADDRINUSE') return fn(err)
-      fn(null, true)
-    })
-    .once('listening', function() {
-      tester.once('close', function() { fn(null, false) })
-      .close()
-    })
-    .listen(port)
-  }
-
 tcpPortUsed.check(3000, 'localhost').then(function(inUse:any) {
-    console.log(inUse);
     if (!inUse) {
         console.log("Port 3000 is not in use")
         app.listen(3000, () => console.log('API listening on port 3000'));
         bot.launch();
+        
+        // Start the file watcher on the configured path
+        startFileWatcher(bot, process.env.WATCH_PATH!)
     } else {
         console.warn("Port 3000 is in use");
     }
