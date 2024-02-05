@@ -398,9 +398,11 @@ function showSettingsPanel(ctx) {
             : userSetting.endTime
                 ? `\n⏰ End Time: ${(0, helpers_1.formatTime)(userSetting.endTime)}`
                 : '';
+    // Get the date with default option
+    const formattedDate = userSetting.date || (0, uploader_1.getCurrentDate)();
     // The title of the message
     const uploadingVideoMessage = (userSetting.videoFileId || userSetting.videoPath)
-        ? `📹 Video: ${userSetting.date || 'YYMMDD'} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
+        ? `📹 Video: ${formattedDate} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
         : '🚫 No video uploaded yet. Please upload a video to start.';
     // Generate the buttons
     ctx.reply(uploadingVideoMessage, telegraf_1.Markup.inlineKeyboard([
@@ -546,29 +548,22 @@ function promptSendVideo(ctx) {
         return;
     }
     const destinationExists = userSettings[userId].destination !== undefined;
+    // Send the link automatically if we have a destination set to send to
+    if (destinationExists) {
+        sendToDestination(ctx, userSettings[userId].destination, false);
+    }
     // Prompt user to send the link to the designated chatroom
-    const sendLinkOptions = telegraf_1.Markup.inlineKeyboard([
+    const keyboardOptions = telegraf_1.Markup.inlineKeyboard([
         [
-            telegraf_1.Markup.button.callback('✅ Send', 'send_link'),
-            telegraf_1.Markup.button.callback('Select Another Room', 'select_different_room'),
+            telegraf_1.Markup.button.callback('Send to a Room', 'select_different_room'),
         ],
         [
             telegraf_1.Markup.button.callback('❌ Cancel', 'cancel'),
         ]
     ]);
-    const keyboardOptions = destinationExists
-        ? sendLinkOptions
-        : telegraf_1.Markup.inlineKeyboard([
-            [
-                telegraf_1.Markup.button.callback('Send to a Room', 'select_different_room'),
-            ],
-            [
-                telegraf_1.Markup.button.callback('❌ Cancel', 'cancel'),
-            ]
-        ]);
     const message = destinationExists
-        ? 'Send the Vimeo link to the designated chatroom?'
-        : 'Do you want to send the link to a chatroom?.';
+        ? 'Link sent to the designated chatroom. Do you want to send to another?'
+        : 'Do you want to send the link to a chatroom?';
     ctx.replyWithMarkdown(message, keyboardOptions);
 }
 function sendToDestination(ctx, chatId, silent) {

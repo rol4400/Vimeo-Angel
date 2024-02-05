@@ -20,7 +20,12 @@ function startFileWatcher(bot, folderToMonitor) {
         ignored: /(^|[\/\\])\../,
         persistent: true,
         ignoreInitial: true,
-        awaitWriteFinish: true,
+        interval: 500,
+        awaitWriteFinish: {
+            stabilityThreshold: 10000,
+            pollInterval: 300
+        },
+        polling: true,
         depth: 99
     });
     let timeoutId = null;
@@ -57,7 +62,7 @@ async function processNewlyDetectedFile(bot, filePath, destinationChatId) {
         // Generate the thumbnail in the temporary directory
         const thumbnailFileName = 'newFileName-thumbnail.png'; // or generate a unique name here if needed
         const thumbnailFilePath = path.join(tempDir, thumbnailFileName);
-        await genThumbnail(newFilePath, thumbnailFilePath, '250x?', {
+        await genThumbnail(newFilePath, thumbnailFilePath, '720x?', {
             seek: '00:00:10.00'
         });
         // URL encode the filename before using it in callback_data

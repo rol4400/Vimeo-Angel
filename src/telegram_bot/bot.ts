@@ -4,7 +4,7 @@ import { StringSession } from 'telegram/sessions';
 
 import { Deta } from 'deta';
 import { getUserId, formatTime, parseTime} from "./helpers"
-import { processUpload, enqueueFile } from "./uploader"
+import { processUpload, enqueueFile, getCurrentDate } from "./uploader"
 import { startFileWatcher, processNewlyDetectedFile } from "./folder-watcher"
 import { v4 as uuidv4 } from 'uuid';
 
@@ -532,9 +532,7 @@ function showSettingsPanel(ctx:any) {
                 : '';
 
     // Get the date with default option
-    const currentDate = new Date();
-    const sYear = currentDate.getFullYear() - 1984;
-    const formattedDate = userSetting.date || `${sYear}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}`;
+    const formattedDate = userSetting.date || getCurrentDate();
    
     // The title of the message
     const uploadingVideoMessage = (userSetting.videoFileId || userSetting.videoPath)
