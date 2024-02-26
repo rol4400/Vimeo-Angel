@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendToDestination = void 0;
+exports.default_pass = exports.sendToDestination = void 0;
 const telegraf_1 = require("telegraf");
 const deta_1 = require("deta");
 const helpers_1 = require("./helpers");
@@ -41,11 +41,16 @@ let userClients;
 const userSettings = {};
 // Define destinations to send messages to
 var destinations;
+// The default password for uploading videos
+var default_pass;
 // Initialisation
 async function init() {
     // Populate the destinations array
     const resultDestination = await configDb.get("destinations");
     destinations = (resultDestination && resultDestination.value);
+    // Get the default password
+    const configDbPassInstance = await configDb.get("default-pass");
+    exports.default_pass = default_pass = ((configDbPassInstance && configDbPassInstance.value)?.toString());
     // Populate the userClients array
     const resultUsers = await configDb.get("users");
     userClients = (resultUsers && resultUsers.value) || [{}];
@@ -100,7 +105,9 @@ bot.use((ctx, next) => {
         return;
     }
     if (!userSettings[userId]) {
-        userSettings[userId] = {};
+        userSettings[userId] = {
+            autocut: false
+        };
     }
     return next();
 });
@@ -171,7 +178,9 @@ bot.on('video', (ctx) => {
         return;
     }
     // Clear any previous videos
-    userSettings[userId] = {};
+    userSettings[userId] = {
+        autocut: false
+    };
     // Save the video file id
     userSettings[userId].videoFileId = ctx.message.video.file_id;
     userSettings[userId].videoDuration = ctx.message.video.duration;
@@ -225,7 +234,9 @@ bot.on('callback_query', (ctx) => {
         }
         const filePath = querystring_1.default.unescape(match[1]);
         // Clear any previous videos
-        userSettings[userId] = {};
+        userSettings[userId] = {
+            autocut: false
+        };
         // Save the video file id
         userSettings[userId].videoPath = filePath;
         userSettings[userId].videoFileId = path_1.default.basename(filePath); // The id is just the filename in this case
@@ -266,6 +277,12 @@ bot.on('callback_query', (ctx) => {
                     input_field_placeholder: "Education Leader Name & Title",
                 },
             });
+            break;
+        case 'autocut_sermon':
+            // Save the selected destination
+            userSettings[userId].autocut = !userSettings[userId].autocut;
+            // Show settings panel
+            showSettingsPanel(ctx);
             break;
         case 'edit_destination':
             ctx.reply('🌍 Please select a destination:', telegraf_1.Markup.inlineKeyboard(destinations.map((dest) => [telegraf_1.Markup.button.callback(`📍 ${dest[0]}`, `select_destination_${dest[1]}`)])));
@@ -324,7 +341,9 @@ bot.on('callback_query', (ctx) => {
             break;
         case 'cancel':
             // Reset user settings
-            userSettings[userId] = {};
+            userSettings[userId] = {
+                autocut: false
+            };
             ctx.reply("Cancelled. Please send me another video when you are ready");
             break;
         case 'queue':
@@ -402,7 +421,7 @@ function showSettingsPanel(ctx) {
     const formattedDate = userSetting.date || (0, uploader_1.getCurrentDate)();
     // The title of the message
     const uploadingVideoMessage = (userSetting.videoFileId || userSetting.videoPath)
-        ? `📹 Video: ${formattedDate} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
+        ? `📹 Video: ${formattedDate} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}\n✂️ Autocut Sermon: ${userSetting.autocut || 'None'}`
         : '🚫 No video uploaded yet. Please upload a video to start.';
     // Generate the buttons
     ctx.reply(uploadingVideoMessage, telegraf_1.Markup.inlineKeyboard([
@@ -417,6 +436,9 @@ function showSettingsPanel(ctx) {
         [
             telegraf_1.Markup.button.callback('⏰ Edit Start Time', 'edit_start_time'),
             telegraf_1.Markup.button.callback('⏰ Edit End Time', 'edit_end_time'),
+        ],
+        [
+            telegraf_1.Markup.button.callback('✂️ Autocut Sermon', 'autocut_sermon'),
         ],
         [
             telegraf_1.Markup.button.callback('🌍 Edit Destination', 'edit_destination'),
@@ -579,7 +601,7 @@ function sendToDestination(ctx, chatId, silent) {
     // Generate the telegram message 
     var message = `<${name}>
 ${userSetting.vimeoLink}
-Pass: ${userSetting.password || configDb.get("default-pass")}`;
+Pass: ${userSetting.password || default_pass}`;
     bot.telegram.sendMessage(chatId, message);
     if (!silent)
         ctx.reply(`Link has been sent to the chat`);

@@ -58,6 +58,7 @@ interface UserSetting {
     phoneNumber?: string; 
     vimeoLink?: string;
     videoPath?: string;
+    autocut: boolean;
 }
 interface UserSettings {
     [userId: string]: UserSetting;
@@ -68,12 +69,19 @@ const userSettings: UserSettings = {};
 // Define destinations to send messages to
 var destinations:any;
 
+// The default password for uploading videos
+var default_pass:string|undefined;
+
 // Initialisation
 async function init() {
 
     // Populate the destinations array
     const resultDestination = await configDb.get("destinations");
     destinations = (resultDestination && resultDestination.value);
+
+    // Get the default password
+    const configDbPassInstance = await configDb.get("default-pass");
+    default_pass = ((configDbPassInstance && configDbPassInstance.value)?.toString());
 
     // Populate the userClients array
     const resultUsers = await configDb.get("users");
@@ -148,7 +156,9 @@ bot.use((ctx:any, next:any) => {
   }
 
   if (!userSettings[userId]) {
-    userSettings[userId] = {};
+    userSettings[userId] = {
+        autocut: false
+    };
   }
   return next();
 });
@@ -241,7 +251,9 @@ bot.on('video', (ctx) => {
   if (!checkAuthenticated(ctx, userId)) { return; }
 
   // Clear any previous videos
-  userSettings[userId] = {};
+  userSettings[userId] = {
+    autocut: false
+  };
   
   // Save the video file id
   userSettings[userId].videoFileId = ctx.message.video.file_id;
@@ -311,7 +323,9 @@ bot.on('callback_query', (ctx:any) => {
         const filePath = querystring.unescape(match[1]);
     
         // Clear any previous videos
-        userSettings[userId] = {};
+        userSettings[userId] = {
+            autocut: false
+        };
         
         // Save the video file id
         userSettings[userId].videoPath = filePath;
@@ -364,6 +378,14 @@ bot.on('callback_query', (ctx:any) => {
             },);
             break;
     
+        case 'autocut_sermon':
+            // Save the selected destination
+            userSettings[userId].autocut = !userSettings[userId].autocut;
+
+            // Show settings panel
+            showSettingsPanel(ctx);
+            break;
+
         case 'edit_destination':
             ctx.reply('🌍 Please select a destination:', Markup.inlineKeyboard(
             destinations.map((dest:any) => [Markup.button.callback(`📍 ${dest[0]}`, `select_destination_${dest[1]}`)])
@@ -437,7 +459,9 @@ bot.on('callback_query', (ctx:any) => {
 
         case 'cancel':
             // Reset user settings
-            userSettings[userId] = {};
+            userSettings[userId] = {
+                autocut: false
+            };
             ctx.reply("Cancelled. Please send me another video when you are ready");
 
             break;
@@ -536,7 +560,7 @@ function showSettingsPanel(ctx:any) {
    
     // The title of the message
     const uploadingVideoMessage = (userSetting.videoFileId || userSetting.videoPath)
-    ? `📹 Video: ${formattedDate} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}`
+    ? `📹 Video: ${formattedDate} ${userSetting.title || 'Title'} (${userSetting.leader || 'Leader'})${timeInfo}\n\n🔐 Password: ${userSetting.password || '********'}\n🌍 Destination: ${destinationName || 'None'}\n✂️ Autocut Sermon: ${ userSetting.autocut || 'None'}`
     : '🚫 No video uploaded yet. Please upload a video to start.';
 
     // Generate the buttons
@@ -552,6 +576,9 @@ function showSettingsPanel(ctx:any) {
         [
             Markup.button.callback('⏰ Edit Start Time', 'edit_start_time'),
             Markup.button.callback('⏰ Edit End Time', 'edit_end_time'),
+        ],
+        [
+            Markup.button.callback('✂️ Autocut Sermon', 'autocut_sermon'),
         ],
         [
             Markup.button.callback('🌍 Edit Destination', 'edit_destination'),
@@ -751,7 +778,7 @@ function sendToDestination(ctx:any, chatId:string, silent:boolean) {
 
     var message = `<${name}>
 ${userSetting.vimeoLink}
-Pass: ${userSetting.password || configDb.get("default-pass")}`;
+Pass: ${userSetting.password || default_pass}`;
 
     bot.telegram.sendMessage(chatId, message)
 
@@ -775,4 +802,4 @@ tcpPortUsed.check(3000, 'localhost').then(function(inUse:any) {
     console.error('Error on check:', err.message);
 });
 
-export { UserSettings, UserSetting, sendToDestination }
+export { UserSettings, UserSetting, sendToDestination, default_pass }

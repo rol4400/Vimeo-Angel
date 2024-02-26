@@ -11,6 +11,7 @@
     "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
     "start-prod-server": "node ./dist/bot.js",
     "start-filemon": "electron src/folder_monitor/main.js",
+    "test-scene-analysis": "tsc --experimental-wasm-modules -r dotenv/config src/telegram_bot/scene-analysis.ts",
     "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css",
     "test-mtproto": "node ./src/telegram_bot/mtproto-test.js",
     "build": "npm install && tsc"
@@ -57,10 +58,10 @@
   },
   "devDependencies": {
     "@types/connect-busboy": "^1.0.3",
+    "@types/express": "^4.17.21",
     "@types/fluent-ffmpeg": "^2.1.24",
-    "@types/node": "^20.8.10",
     "@types/tcp-port-used": "^1.0.4",
-    "@types/uuid": "^9.0.7",
-    "@types/vimeo": "^2.1.7"
+    "@types/uuid": "^9.0.8",
+    "@types/vimeo": "^2.1.8"
   }
 }

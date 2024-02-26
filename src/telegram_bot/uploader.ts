@@ -3,8 +3,11 @@ import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
 import { getUserId } from './helpers';
 import fs from 'fs';
+import { ReadStream } from 'fs';
+import { createReadStream } from 'fs';
 import path from 'path';
-import { UserSettings, UserSetting, sendToDestination } from "./bot"
+import { UserSettings, UserSetting, sendToDestination, default_pass } from "./bot"
+import { extractMainSermon } from "./scene-analysis"
 import { DetaType } from 'deta/dist/types/types/basic';
 import Base from 'deta/dist/types/base';
 import * as chrono from 'chrono-node';
@@ -27,135 +30,38 @@ const vimeoClient = new Vimeo(
 // Store message IDs and chat IDs for progress bars
 const progressBars:any[] = [{}];
 
-// Function to download video by file_id with progress bar
-// async function downloadVideo(fileId, chatId, bot, progressCallback) {
-//     try {
-//         const file = await bot.telegram.getFile(fileId);
-//         const fileUrl = `https://mtprotoApi.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
-//         const response = await axios({
-//             url: fileUrl,
-//             method: 'GET',
-//             responseType: 'stream',
-//             onDownloadProgress: (progressEvent) => {
-//                 const totalMB = progressEvent.total! / (1024 * 1024);
-//                 const downloadedMB = progressEvent.loaded / (1024 * 1024);
-//                 const percentage = ((progressEvent.loaded / progressEvent.total!) * 100).toFixed(2);
-            
-//                 // Check if downloadedMB is a valid number before using toFixed
-//                 const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB.toString())) ? parseFloat(downloadedMB.toString()).toFixed(2) : 'N/A';
-            
-//                 progressCallback(percentage, downloadedMBFormatted, totalMB);
-//             },
-            
-//         });
-
-//         const storagePath = path.join(__dirname, '..', 'video_store');
-//         const filePath = `${storagePath}/${file.file_id}.mp4`;
-//         const fileStream = fs.createWriteStream(filePath);
-//         response.data.pipe(fileStream);
-
-//         return new Promise((resolve, reject) => {
-//             fileStream.on('finish', () => resolve(filePath));
-//             fileStream.on('error', reject);
-//         });
-//     } catch (error) {
-//         console.error('Error downloading video:', error);
-//         throw error;
-//     }
-// }
-
-// Function to download video by file_id with progress bar
-
-// async function downloadVideo(fileId:string, bot:any, progressCallback:Function) {
-//     try {
-
-//         const url = `${process.env.BOT_URI!}/bot${process.env.BOT_TOKEN!}/getFile?file_id=${fileId}`;
-
-//         try {
-//             await axios.get(url, {
-//               // Adjust timeout as needed, set to 0 for no timeout
-//               timeout: 0,
-//             });
-        
-//             // Handle the response data here
-//             const file = await bot.telegram.getFile(fileId);
-//             const fileUrl = `http://${process.env.BOT_URI}/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
-//             const response = await axios({
-//                 url: fileUrl,
-//                 method: 'GET',
-//                 responseType: 'stream',
-//                 onDownloadProgress: (progressEvent) => {
-//                     const totalMB = progressEvent.total! / (1024 * 1024);
-//                     const downloadedMB = progressEvent.loaded / (1024 * 1024);
-//                     const percentage = ((progressEvent.loaded / progressEvent.total!) * 100).toFixed(2);
-                
-//                     // Check if downloadedMB is a valid number before using toFixed
-//                     const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB.toString())) ? parseFloat(downloadedMB.toString()).toFixed(2) : 'N/A';
-                
-//                     progressCallback(percentage, downloadedMBFormatted, totalMB);
-//                 },
-                
-//             });
-    
-//             // Store the file on local storage
-//             const storagePath = path.join(__dirname, '..', 'video_store');
-//             const filePath = `${storagePath}/${file.file_id}.mp4`;
-//             const fileStream = fs.createWriteStream(filePath);
-//             response.data.pipe(fileStream);
-    
-//             return new Promise((resolve, reject) => {
-//                 fileStream.on('finish', () => resolve(filePath));
-//                 fileStream.on('error', reject);
-//             });
-        
-//           } catch (error:any) {
-//             // Handle errors here
-//             console.error('Error fetching file:', error.message);
-//         }
-
-//         throw new Error("Internal error downloading the video file from telegram");
-
-//     } catch (error) {
-//         console.error('Error downloading video:', error);
-//         throw error;
-//     }
-// }
-
 // For getting a file path to a file uploaded to the telegram bot API
-async function getFilePath(userSettings:UserSettings, userId: string) {
+async function getFilePath(userSettings: UserSettings, userId: string) {
     const userSetting = userSettings[userId];
 
     // Check if we already have a file path set
     if (userSetting.videoPath) {
         return userSetting.videoPath;
     } else {
+        const maxAttempts = 5;
+        let attempts = 0;
 
-        // Get the file from the telegram bot API
-        // This is done manually so that we can set the timeout value
-        // Otherwise if there is a timeout for large files or slow wifi it will fail
-        try {
-            const url = `http://${process.env.BOT_URI!}/bot${process.env.BOT_TOKEN!}/getFile?file_id=${userSetting.videoFileId}`;
+        while (attempts < maxAttempts) {
+            try {
+                const url = `http://${process.env.BOT_URI!}/bot${process.env.BOT_TOKEN!}/getFile?file_id=${userSetting.videoFileId}`;
+                const file = await axios.get(url, {
+                    // Adjust timeout as needed, set to 0 for no timeout
+                    timeout: 0,
+                });
 
-            const file = (await axios.get(url, {
-              // Adjust timeout as needed, set to 0 for no timeout
-              timeout: 0,
-            }));
-        
-           
-            console.log("getFile Response:");
-            console.log(file);
-    
-            // const inputStoragePath = path.join('/var/lib/telegram-bot-api', 'bin', (process.env.BOT_TOKEN!).replace(":", "~"), "videos");
-            const inputPath = `${file.data.result.file_path}`;
-    
-            return inputPath;
-        
-          } catch (error:any) {
-            // Handle errors here
-            console.error('Error fetching file:', error);
+                console.log("getFile Response:");
+                console.log(file);
+
+                const inputPath = `${file.data.result.file_path}`;
+                return inputPath;
+            } catch (error: any) {
+                // Handle errors here
+                console.error('Error fetching file:', error);
+                attempts++;
+            }
         }
-        
-        throw new Error("Internal error downloading the video file from telegram");
+
+        throw new Error("Failed to download the video file from telegram after multiple attempts");
     }
 }
 
@@ -171,65 +77,69 @@ interface QueueItem {
 // Enqueue a file for later processing
 async function enqueueFile(ctx: any, userId: string, userSettings: UserSettings, processingTime: string, queueDb: Base, bot: any) {
 
-    // Setup input variables
-    const filePath = await getFilePath(userSettings, userId);
-    const fileKey = querystring.escape(filePath);
-    const fileSettings = userSettings[userId];
-  
-    // Generate the date of processing using natural language
-    const parsedDate = chrono.parseDate(processingTime);
-    console.log("Queueing job for:");
-    console.log(parsedDate);
-  
-    // Construct a QueueItem to store the required information in the queue
-    const item: QueueItem = {
-      userId,
-      fileSettings,
-      filePath,
-      fileKey,
-      processingTime: parsedDate.getTime(), // Store processing time as a timestamp
-      status: 'queued',
-    };
-  
-    await queueDb.insert(item as unknown as DetaType);
-  
-    // Schedule a processing job at the specified processing time
-    const job = new CronJob(parsedDate, async () => {
-  
-      console.log("Running queued job...");
-      try {
-        // Retrieve the first file from the database with 'queued' status
-        const fileToUpdate = await queueDb.fetch({ userId, status: 'queued' }, { limit: 1 });
-  
-        if (fileToUpdate.items.length > 0) {
-          const file = fileToUpdate.items[0];
-  
-          // Check if file is not undefined before updating
-          if (file) {
-            // Update the status to 'processing'
-            file.status = 'processing';
-            await queueDb.update(file, fileToUpdate.last!);
-  
-            console.log("Running queued file:")
-            console.log(file);
-  
-            // Process the queued file
-            await processQueuedFile(ctx, bot, queueDb, userSettings);
-  
-            // The cron job will only process one file at a time
-  
-            // Delete the processed item from the database
-            await queueDb.delete(fileToUpdate.last!);
-          }
+    try {
+        // Setup input variables
+        const filePath = await getFilePath(userSettings, userId);
+        const fileKey = querystring.escape(filePath);
+        const fileSettings = userSettings[userId];
+    
+        // Generate the date of processing using natural language
+        const parsedDate = chrono.casual.parseDate(processingTime, new Date(), { forwardDate: true });
+        console.log("Queueing job for:");
+        console.log(parsedDate);
+    
+        // Construct a QueueItem to store the required information in the queue
+        const item: QueueItem = {
+        userId,
+        fileSettings,
+        filePath,
+        fileKey,
+        processingTime: parsedDate!.getTime(), // Store processing time as a timestamp
+        status: 'queued',
+        };
+    
+        await queueDb.insert(item as unknown as DetaType);
+    
+        // Schedule a processing job at the specified processing time
+        const job = new CronJob(parsedDate!, async () => {
+    
+        console.log("Running queued job...");
+        try {
+            // Retrieve the first file from the database with 'queued' status
+            const fileToUpdate = await queueDb.fetch({ userId, status: 'queued' }, { limit: 1 });
+    
+            if (fileToUpdate.items.length > 0) {
+            const file = fileToUpdate.items[0];
+    
+            // Check if file is not undefined before updating
+            if (file) {
+                // Update the status to 'processing'
+                file.status = 'processing';
+                await queueDb.update(file, fileToUpdate.last!);
+    
+                console.log("Running queued file:")
+                console.log(file);
+    
+                // Process the queued file
+                await processQueuedFile(ctx, bot, queueDb, userSettings);
+    
+                // The cron job will only process one file at a time
+    
+                // Delete the processed item from the database
+                await queueDb.delete(fileToUpdate.last!);
+            }
+            }
+        } catch (error) {
+            console.error('Error processing queued file:', error);
+            // Handle the error as needed
         }
-      } catch (error) {
-        console.error('Error processing queued file:', error);
-        // Handle the error as needed
-      }
-    });
-  
-    // Start the cron job
-    job.start();
+        });
+    
+        // Start the cron job
+        job.start();
+    } catch (error) {
+        console.error ("Error in Enqueuing the File: " + error);
+    }
 }
 
 // Function to process a queued file
@@ -265,61 +175,61 @@ function getCurrentDate() {
 }
 
 // Function to upload video to Vimeo with progress bar
-async function uploadToVimeo(localFilePath:string, userId:number, chatId:number, userSettings:UserSettings, progressCallback:Function) {
+async function uploadToVimeo(localFilePath:string, userId:number, chatId:number, userSettings:UserSettings, progressCallback:Function, retryCount:number = 5) {
     return new Promise(async (resolve, reject) => {
-        
         // Get the user settings
         const userSetting = userSettings[userId];
 
         // Format the name of the video
-        const formattedDate = userSetting.date || getCurrentDate;
+        const formattedDate = userSetting.date || getCurrentDate();
         const leaderText = userSetting.leader ? ` (${userSetting.leader})` : '';
-
         const name = `${formattedDate} ${userSetting.title || 'Title'}${leaderText}`;
 
-        try {
-            const videoUpload = await vimeoClient.upload(
-                localFilePath,
-                {
-                    name: name,
-                    description: `Uploaded on ${new Date().toLocaleDateString()}`,
-                },
-                async function (uri) {
-                    // Complete callback
-                    console.log('Video uploaded successfully. Vimeo link: https://vimeo.com/manage/', uri);
+        const uploadFunction = async () => {
+            try {
+                const videoUpload = await vimeoClient.upload(
+                    localFilePath,
+                    {
+                        name: name,
+                        description: `Uploaded on ${new Date().toLocaleDateString()}`,
+                    },
+                    async function (uri) {
+                        // Complete callback
+                        console.log('Video uploaded successfully. Vimeo link: https://vimeo.com/manage/', uri);
 
-                    // Set privacy settings with the provided password
-                    const password = userSetting.password; // Replace with the actual property from your settings
-                    await setPrivacySettings(uri.split('/').pop()!, password);
+                        // Set privacy settings with the provided password
+                        const password = userSetting.password || default_pass;
+                        await setPrivacySettings(uri.split('/').pop()!, password);
 
-                    // Delete the local file after the upload is complete
-                    await deleteLocalFile(localFilePath, chatId);
+                        resolve(uri);
+                    },
+                    function (bytes_uploaded, bytes_total) {
+                        // Progress callback
+                        const totalMB = bytes_total / (1024 * 1024);
+                        const uploadedMB = !isNaN(parseFloat(bytes_uploaded.toString())) ? bytes_uploaded / (1024 * 1024) : 'N/A';
+                        const percentage = ((bytes_uploaded / bytes_total) * 100).toFixed(2);
+                        progressCallback(percentage, uploadedMB, totalMB);
+                    },
+                    function (error) {
+                        // Error callback
+                        console.error('Vimeo upload error:', error);
+                        throw error;
+                    }
+                );
+            } catch (error:any) {
+                if (retryCount > 0) {
+                    console.log(`Retrying upload due to error: ${error.code}. Retries left: ${retryCount}`);
+                    await uploadToVimeo(localFilePath, userId, chatId, userSettings, progressCallback, retryCount - 1);
+                } else {
+                    console.error('Error uploading video to Vimeo:', error);
 
-                    resolve(uri);
-                },
-                function (bytes_uploaded, bytes_total) {
-                    // Progress callback
-                    const totalMB = bytes_total / (1024 * 1024);
-                    const uploadedMB = !isNaN(parseFloat(bytes_uploaded.toString())) ? bytes_uploaded / (1024 * 1024) : 'N/A';
-                    const percentage = ((bytes_uploaded / bytes_total) * 100).toFixed(2);
-                    progressCallback(percentage, uploadedMB, totalMB);
-                },
-                function (error) {
-                    // Error callback
-                    console.error('Vimeo upload error:', error);
-
-                    // Delete the local file after the upload fails
-                    deleteLocalFile(localFilePath, chatId);
                     reject(error);
                 }
-            );
-        } catch (error) {
-            console.error('Error uploading video to Vimeo:', error);
+            }
+        };
 
-            // Delete the local file after the upload fails
-            deleteLocalFile(localFilePath, chatId);
-            reject(error);
-        }
+        // Initial upload attempt
+        await uploadFunction();
     });
 }
 
@@ -395,17 +305,40 @@ async function editVideo(inputPath: string, outputPath: string, chatId: number, 
             const progressBar = generateProgressBar(parseFloat(percentage));
 
             // Update the progress message
-            updateProgressMessage(chatId, bot, `Processing video... ${percentage}%\n${progressBar}`);
+            updateProgressMessage(chatId, bot, `Cutting and compressing video... ${percentage}%\n${progressBar}`);
         });
 
         await new Promise((resolve, reject) => {
-            command.on('end', resolve).on('error', reject).run();
+            command.on('end', async () => {
+                // Once video processing is complete, send the file to the chat
+                try {
+                    await sendVideoToChat(outputPath, chatId, bot, "Processed Video File");
+                    resolve(true);
+                } catch (error) {
+                    reject(error);
+                }
+            }).on('error', reject).run();
         });
 
-        console.log('Video cut successfully:', outputPath);
+        console.log('Video processed successfully:', outputPath);
         return outputPath;
     } catch (error) {
         console.error('Error processing video:', error);
+        throw error;
+    }
+}
+
+async function sendVideoToChat(filePath: string, chatId: number, bot: any, message:string) {
+    try {
+
+        await bot.telegram.sendMessage(chatId, "Processing video for telegram...");
+
+        const stream: ReadStream = createReadStream(filePath);
+
+        // Use Telegram Bot API to send the file to the chat
+        await bot.telegram.sendVideo(chatId, { source: stream }, { caption: message });
+    } catch (error) {
+        console.error('Error sending video to chat:', error);
         throw error;
     }
 }
@@ -423,28 +356,19 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         // Check if progress message has been sent
         if (!progressBars[chatId] || !progressBars[chatId].message_id) {
             if (!silent){
-                progressMessage = await ctx.reply('Preparing for processing...');
+                progressMessage = await ctx.reply('Uploading Video... Please keep telegram open and connected');
                 progressBars[chatId] = { message_id: progressMessage.message_id };
             }
         }
-
-        // Download the video from telegram
-        // const localFilePath = await downloadVideo(userSetting.videoFileId, bot, (percentage, downloadedMB, totalMB) => {
-        //     const progressBar = generateProgressBar(percentage);
-
-        //     const downloadedMBFormatted = !isNaN(parseFloat(downloadedMB)) ? parseFloat(downloadedMB).toFixed(2) : 'N/A';
-        //     updateProgressMessage(chatId, bot, progressBars[chatId].message_id, `Downloading... ${percentage}% (${downloadedMBFormatted} MB / ${totalMB.toFixed(2)} MB)\n${progressBar}`);
-           
-        // });
-        // console.log('Video downloaded successfully:', localFilePath);
 
         const inputPath = await getFilePath(userSettings, userId);
 
         // Cut the video based on start and end times
         const outputStoragePath = path.join(__dirname, '..', 'uploads');
-        const outputPath = `${outputStoragePath}\\${userSetting.videoFileId}_cut.mp4`;
-        
-        if (!silent) updateProgressMessage(chatId, bot, "Processing video...");
+        const outputPath = `${outputStoragePath}/${userSetting.videoFileId}_cut.mp4`;
+        const outputAutocutPath = `${outputStoragePath}/${userSetting.videoFileId}_autocut.mp4`;
+       
+        if (!silent) updateProgressMessage(chatId, bot, "Cutting and compressing video...");
         const resultPath = await editVideo(inputPath, outputPath, chatId, bot, userSetting.startTime, userSetting.endTime);
 
         // Upload the video to vimeo
@@ -454,6 +378,19 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
             const uploadedMBFormatted = !isNaN(parseFloat(uploadedMB)) ? parseFloat(uploadedMB).toFixed(2) : 'N/A';
             if (!silent) updateProgressMessage(chatId, bot, `Uploading to Vimeo... ${percentage}% (${uploadedMBFormatted} MB / ${parseFloat(totalMB).toFixed(2)} MB)\n${progressBar}`);
         });
+
+         // Extract the main sermon part to send separately
+         console.log(userSetting.autocut);
+         console.log(userSetting);
+         if (userSetting.autocut == true) {
+            await extractMainSermon(resultPath, outputAutocutPath, chatId, bot, async (progress:number) => {
+                const percentage = progress.toFixed(2);
+                const progressBar = generateProgressBar(parseFloat(percentage));
+
+                // Update the progress message
+                updateProgressMessage(chatId, bot, `Analysing Sermon... ${percentage}%\n${progressBar}`);
+            });                
+        }
 
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
         if (!silent) {
@@ -475,25 +412,28 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
             }
         }
 
-        // Reset user settings
-        // userSettings[userId] = {};
+        // Delete the local file after the upload is complete
+        await deleteLocalFile(outputPath, chatId);
+
+          
+        // Edit the final message indicating completion
+        if (!silent) await ctx.telegram.editMessageText(
+            chatId,
+            progressBars[chatId].message_id,
+            null,
+            'Processing complete!\n' + generateProgressBar(100)
+        );
+
 
     } catch (error) {
         
         console.error('Error processing video:', error);
         if (!silent) ctx.reply('Error processing video. Please try again later.');
 
-        //TODO: Deletion here
+        // TODO: Proper deletion cleanup here
+
         return false;
     }
-    
-    // Edit the final message indicating completion
-    if (!silent) await ctx.telegram.editMessageText(
-        chatId,
-        progressBars[chatId].message_id,
-        null,
-        'Processing complete!\n' + generateProgressBar(100)
-    );
 
     return true
 }
@@ -512,7 +452,7 @@ function generateProgressBar(progress:number) {
 
     const progressBar = '█'.repeat(Math.max(completed, 0)) + '░'.repeat(Math.max(remaining, 0));
 
-    return `[${progressBar}] ${numericProgress.toFixed(2)}%`;
+    return `[${progressBar}]`;
 }
 
 
@@ -566,4 +506,4 @@ async function sendWithRetry(ctx:any, message:any, retryInterval = 3000, maxRetr
     console.error('Max retries reached. Message not sent.');
 }
 
-export { processUpload, enqueueFile, getCurrentDate }
+export { processUpload, enqueueFile, getCurrentDate, sendVideoToChat, editVideo }

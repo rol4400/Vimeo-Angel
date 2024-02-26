@@ -15,6 +15,8 @@ const videoExtensions = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm'
 
 // Start monitoring the set directory for new video files
 function startFileWatcher(bot: any, folderToMonitor: string) {
+
+    console.log("Started file watcher");
     
     // Watch the specified folder and its subdirectories for new MP4 files
     const watcher = chokidar.watch(folderToMonitor, {
@@ -23,7 +25,7 @@ function startFileWatcher(bot: any, folderToMonitor: string) {
         ignoreInitial: true,
         interval: 500,
         awaitWriteFinish: {
-            stabilityThreshold: 10000,
+            stabilityThreshold: 20000,
             pollInterval: 300
           },
         polling: true,        

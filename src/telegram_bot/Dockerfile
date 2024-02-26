@@ -15,7 +15,8 @@ RUN apt-get install -y ffmpeg
 
 # Install NPM and Typescript
 COPY package*.json ./
-RUN npm install && npm install typescript -g
+RUN npm install typescript -g
+RUN npm install
 
 # RUN file="$(ls -1 /tmp)" && echo $file
 # RUN tsc
