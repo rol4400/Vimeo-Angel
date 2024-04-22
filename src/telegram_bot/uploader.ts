@@ -49,8 +49,7 @@ async function getFilePath(userSettings: UserSettings, userId: string) {
                     timeout: 0,
                 });
 
-                console.log("getFile Response:");
-                console.log(file);
+                console.log("GetFile Telegram Upload Response Received");
 
                 const inputPath = `${file.data.result.file_path}`;
                 return inputPath;
@@ -195,13 +194,14 @@ async function uploadToVimeo(localFilePath:string, userId:number, chatId:number,
                     },
                     async function (uri) {
                         // Complete callback
-                        console.log('Video uploaded successfully. Vimeo link: https://vimeo.com/manage/', uri);
 
                         // Set privacy settings with the provided password
                         const password = userSetting.password || default_pass;
-                        await setPrivacySettings(uri.split('/').pop()!, password);
+                        const video_id = uri.split('/').pop()!;
+                        console.log('Video uploaded successfully. Vimeo link: https://vimeo.com/' + video_id);
 
-                        resolve(uri);
+                        await setPrivacySettings(video_id, password);
+                        resolve(video_id);
                     },
                     function (bytes_uploaded, bytes_total) {
                         // Progress callback
@@ -242,7 +242,7 @@ async function deleteLocalFile(filePath:string, chatId:number) {
             console.log('Local file deleted successfully:', filePath);
           });
     } catch (deleteError) {
-        console.error('Error deleting local file:', deleteError);
+        console.log('Error deleting local file:', deleteError);
     }
 
     // Reset the progress bars
@@ -312,7 +312,6 @@ async function editVideo(inputPath: string, outputPath: string, chatId: number, 
             command.on('end', async () => {
                 // Once video processing is complete, send the file to the chat
                 try {
-                    await sendVideoToChat(outputPath, chatId, bot, "Processed Video File");
                     resolve(true);
                 } catch (error) {
                     reject(error);
@@ -369,9 +368,10 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         const outputAutocutPath = `${outputStoragePath}/${userSetting.videoFileId}_autocut.mp4`;
        
         if (!silent) updateProgressMessage(chatId, bot, "Cutting and compressing video...");
-        const resultPath = await editVideo(inputPath, outputPath, chatId, bot, userSetting.startTime, userSetting.endTime);
+        await editVideo(inputPath, outputPath, chatId, bot, userSetting.startTime, userSetting.endTime).then(async (resultPath:string) => {
+            await sendVideoToChat(resultPath, chatId, bot, "Processed Video File");
 
-        // Upload the video to vimeo
+            // Upload the video to vimeo
         const vimeoUri = await uploadToVimeo(resultPath, userId, chatId, userSettings, async (percentage:number, uploadedMB:string, totalMB:string) => {
             const progressBar = generateProgressBar(percentage);
 
@@ -380,23 +380,21 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
         });
 
          // Extract the main sermon part to send separately
-         console.log(userSetting.autocut);
-         console.log(userSetting);
          if (userSetting.autocut == true) {
             await extractMainSermon(resultPath, outputAutocutPath, chatId, bot, async (progress:number) => {
                 const percentage = progress.toFixed(2);
                 const progressBar = generateProgressBar(parseFloat(percentage));
 
                 // Update the progress message
-                updateProgressMessage(chatId, bot, `Analysing Sermon... ${percentage}%\n${progressBar}`);
+                if (!silent) updateProgressMessage(chatId, bot, `Analysing Sermon... ${percentage}%\n${progressBar}`);
             });                
         }
 
         // Do something with the Vimeo URI (save it, send it in a message, etc.)
         if (!silent) {
-            sendWithRetry(ctx, `Video uploaded successfully. Vimeo link: https://vimeo.com/manage${vimeoUri}`)
+            sendWithRetry(ctx, `Video uploaded successfully. Vimeo link: https://vimeo.com/${vimeoUri}`)
         }
-        userSetting.vimeoLink = `https://vimeo.com/manage${vimeoUri}`;
+        userSetting.vimeoLink = `https://vimeo.com/${vimeoUri}`;
 
         // Prompt user to send the link to the designated chatroom
         if (!silent) {
@@ -414,16 +412,9 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
 
         // Delete the local file after the upload is complete
         await deleteLocalFile(outputPath, chatId);
+        });
 
-          
-        // Edit the final message indicating completion
-        if (!silent) await ctx.telegram.editMessageText(
-            chatId,
-            progressBars[chatId].message_id,
-            null,
-            'Processing complete!\n' + generateProgressBar(100)
-        );
-
+        return true
 
     } catch (error) {
         
@@ -434,8 +425,6 @@ async function processUpload(ctx:any, bot:any, userSettings:UserSettings, prompt
 
         return false;
     }
-
-    return true
 }
 
 // Function to generate a simple ASCII progress bar

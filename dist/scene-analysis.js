@@ -19,7 +19,7 @@ function extractSceneChanges(videoPath, callback, progressCallback) {
                 const sceneDetection = ffmpeg(videoPath)
                     .outputOptions([
                     `-vf`,
-                    `select=gt(scene\\,0.35),showinfo`,
+                    `select=gt(scene\\,0.4),showinfo`,
                     '-vsync',
                     'vfr'
                 ])
@@ -58,10 +58,11 @@ function findLargestGap(timestamps, duration) {
     let largestGapStart = 0;
     let largestGapEnd = 0;
     let largestGap = 0;
+    console.log("Duration: " + duration);
     // Iterate through the sorted timestamps to find the largest gap
     for (let i = 1; i < sortedTimestamps.length; i++) {
         const gap = sortedTimestamps[i] - sortedTimestamps[i - 1];
-        if (gap > largestGap && duration) { // && gap > duration * 0.35
+        if (gap > largestGap) {
             largestGap = gap;
             largestGapStart = sortedTimestamps[i - 1];
             largestGapEnd = sortedTimestamps[i];
@@ -75,29 +76,37 @@ function findLargestGap(timestamps, duration) {
 }
 // Extract the main sermon part from the video, cut it, and send to the telegram chatroom
 async function extractMainSermon(inputVideo, outputAutocutPath, chatId, bot, progressCallback) {
-    // Extract the changes in scene
-    await extractSceneChanges(inputVideo, async (err, timestamps, duration) => {
-        if (err) {
-            console.error('Error:', err);
-            return;
-        }
-        console.log('Scene change timestamps:', timestamps);
-        // Find the largest gap that also takes up more than 50% of the recording
-        const largestGap = findLargestGap(timestamps, duration);
-        if (largestGap) {
-            console.log('Largest Gap Start:', largestGap[0]);
-            console.log('Largest Gap End:', largestGap[1]);
-            // Cut the video to match those scene changes
-            await (0, uploader_1.editVideo)(inputVideo, outputAutocutPath, chatId, bot, largestGap[0].toString(), largestGap[1].toString()).then(async (outputPath) => {
-                // Send the file to telegram
-                await (0, uploader_1.sendVideoToChat)(outputPath, chatId, bot, "Auto-cut Sermon Part");
+    return new Promise(async (resolve, reject) => {
+        try {
+            await new Promise((resolve, reject) => {
+                extractSceneChanges(inputVideo, async (err, timestamps, duration) => {
+                    if (err) {
+                        console.error('Error:', err);
+                        reject(err);
+                        return;
+                    }
+                    console.log('Scene change timestamps:', timestamps);
+                    const largestGap = findLargestGap(timestamps, duration);
+                    if (largestGap) {
+                        console.log('Largest Gap Start:', largestGap[0]);
+                        console.log('Largest Gap End:', largestGap[1]);
+                        await (0, uploader_1.editVideo)(inputVideo, outputAutocutPath, chatId, bot, largestGap[0].toString(), largestGap[1].toString()).then(async (outputAutocutPath) => {
+                            await (0, uploader_1.sendVideoToChat)(outputAutocutPath, chatId, bot, "Auto-cut Sermon Part");
+                        });
+                    }
+                    else {
+                        console.log('No gap found meeting the criteria.');
+                    }
+                    resolve();
+                }, (progress) => {
+                    progressCallback(progress);
+                });
             });
+            resolve();
         }
-        else {
-            console.log('No gap found meeting the criteria.');
+        catch (error) {
+            reject(error);
         }
-    }, (progress) => {
-        progressCallback(progress);
     });
 }
 exports.extractMainSermon = extractMainSermon;

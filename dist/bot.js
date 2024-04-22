@@ -334,7 +334,7 @@ bot.on('callback_query', (ctx) => {
                 // Upload failed, ask if they should queue the file to try again later
                 ctx.reply('⌚ Do you want to queue the upload for a later date and try again then?', telegraf_1.Markup.inlineKeyboard([
                     telegraf_1.Markup.button.callback('✅ Try again now', 'complete'),
-                    telegraf_1.Markup.button.callback('⌚ Queue', 'queue'),
+                    // Markup.button.callback('⌚ Queue', 'queue'), TODO: Implement Queue
                     telegraf_1.Markup.button.callback('❌ Cancel', 'cancel'),
                 ]));
             }
@@ -445,7 +445,7 @@ function showSettingsPanel(ctx) {
         ],
         [
             telegraf_1.Markup.button.callback('✅ Complete', 'complete'),
-            telegraf_1.Markup.button.callback('⌚ Queue', 'queue'),
+            // Markup.button.callback('⌚ Queue', 'queue'), TODO: Implement Queue
             telegraf_1.Markup.button.callback('❌ Cancel', 'cancel'),
         ],
     ]));
@@ -594,7 +594,7 @@ function sendToDestination(ctx, chatId, silent) {
     const userSetting = userSettings[userId];
     // Format the name of the video
     const currentDate = new Date();
-    const sYear = currentDate.getFullYear() - 1984;
+    const sYear = currentDate.getFullYear() - 1984 + 1; // +1 because we count from 0 XD;
     const formattedDate = userSetting.date || `${sYear}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}`;
     const leaderText = userSetting.leader ? ` (${userSetting.leader})` : '';
     const name = `${formattedDate} ${userSetting.title || 'Title'}${leaderText}`;

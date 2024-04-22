@@ -20,7 +20,7 @@ function extractSceneChanges(videoPath: string, callback: (error: Error | null, 
                 const sceneDetection = ffmpeg(videoPath)
                     .outputOptions([
                         `-vf`,
-                        `select=gt(scene\\,0.35),showinfo`,
+                        `select=gt(scene\\,0.4),showinfo`,
                         '-vsync',
                         'vfr'
                     ])
@@ -63,10 +63,12 @@ function findLargestGap(timestamps: number[], duration: number): [number, number
     let largestGapEnd = 0;
     let largestGap = 0;
 
+    console.log("Duration: " + duration);
+
     // Iterate through the sorted timestamps to find the largest gap
     for (let i = 1; i < sortedTimestamps.length; i++) {
         const gap = sortedTimestamps[i] - sortedTimestamps[i - 1];
-        if (gap > largestGap && duration) { // && gap > duration * 0.35
+        if (gap > largestGap) {
             largestGap = gap;
             largestGapStart = sortedTimestamps[i - 1];
             largestGapEnd = sortedTimestamps[i];
@@ -83,38 +85,38 @@ function findLargestGap(timestamps: number[], duration: number): [number, number
 
 // Extract the main sermon part from the video, cut it, and send to the telegram chatroom
 async function extractMainSermon(inputVideo:string, outputAutocutPath:string, chatId:number, bot:any, progressCallback:Function) {
-
-    // Extract the changes in scene
-    await new Promise<void>((resolve, reject) => {
-        extractSceneChanges(inputVideo, async (err: Error | null, timestamps: number[] | null, duration: number) => {
-            if (err) {
-                console.error('Error:', err);
-                reject(err); // Reject the Promise if there's an error
-                return;
-            }
-            console.log('Scene change timestamps:', timestamps);
-        
-            // Find the largest gap that also takes up more than 50% of the recording
-            const largestGap = findLargestGap(timestamps!, duration);
-            if (largestGap) {
-                console.log('Largest Gap Start:', largestGap[0]);
-                console.log('Largest Gap End:', largestGap[1]);
-        
-                // Cut the video to match those scene changes
-                await editVideo(inputVideo, outputAutocutPath, chatId, bot,  largestGap[0].toString(), largestGap[1].toString()).then(async (outputPath:string) => {
-
-                    // Send the file to telegram
-                    await sendVideoToChat(outputPath, chatId, bot, "Auto-cut Sermon Part");
-                })
-        
-            } else {
-                console.log('No gap found meeting the criteria.');
-            }
-
-            resolve(); // Resolve the Promise when done
-        }, (progress: number) => {
-            progressCallback(progress);
-        });
+    return new Promise <void>(async (resolve, reject) => {
+        try {
+            await new Promise<void>((resolve, reject) => {
+                extractSceneChanges(inputVideo, async (err: Error | null, timestamps: number[] | null, duration: number) => {
+                    if (err) {
+                        console.error('Error:', err);
+                        reject(err);
+                        return;
+                    }
+                    console.log('Scene change timestamps:', timestamps);
+                
+                    const largestGap = findLargestGap(timestamps!, duration);
+                    if (largestGap) {
+                        console.log('Largest Gap Start:', largestGap[0]);
+                        console.log('Largest Gap End:', largestGap[1]);
+                
+                        await editVideo(inputVideo, outputAutocutPath, chatId, bot,  largestGap[0].toString(), largestGap[1].toString()).then(async (outputAutocutPath:string) => {
+                            await sendVideoToChat(outputAutocutPath, chatId, bot, "Auto-cut Sermon Part");
+                        })
+                
+                    } else {
+                        console.log('No gap found meeting the criteria.');
+                    }
+                    resolve();
+                }, (progress: number) => {
+                    progressCallback(progress);
+                });
+            });
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
     });
 }
 

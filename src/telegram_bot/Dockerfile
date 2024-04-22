@@ -9,8 +9,8 @@ WORKDIR /usr/src/bot
 # where available (npm@5+)
 
 # Install ffmpeg for video processing
-RUN apt-get -y update
 RUN apt-get -y upgrade
+RUN apt-get -y update
 RUN apt-get install -y ffmpeg
 
 # Install NPM and Typescript

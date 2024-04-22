@@ -12,14 +12,12 @@ services:
         ports:
             - "3000:3000"
             - "5000:5000"
-            - "443:443"
             - "5222:5222"
         volumes:
             - ./:/usr/src/bot
             - ./telegram-bot-api-data:/var/lib/telegram-bot-api
             - C:\Users\General Users\Documents\Zoom:/var/lib/telegram-bot-api/watch/zoom
             - C:\Users\General Users\Videos:/var/lib/telegram-bot-api/watch/pro_presenter
-            - Q:\Vimeo Uploader:/var/lib/telegram-bot-api/watch/nhne_cloud
         entrypoint: ["bash", "-c", "tsc && npm run start-prod-server"]
     telegram-bot-api:
         image: aiogram/telegram-bot-api:latest
