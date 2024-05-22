@@ -226,28 +226,42 @@ async function deleteLocalFile(filePath, chatId) {
 }
 // Function to set privacy settings for the video on Vimeo
 async function setPrivacySettings(videoId, password) {
-    // Skip blank passwords and instead use the vimeo default
-    if (password === undefined || password == "")
-        return;
+    if (password === undefined || password == "") {
+        return Promise.resolve("Password is undefined or blank, skipping update.");
+    }
     return new Promise((resolve, reject) => {
-        vimeoClient.request({
-            method: 'PATCH',
-            path: `/videos/${videoId}`,
-            query: {
-                password: password,
-                privacy: {
-                    view: 'password',
-                },
-            },
-        }, function (error, body, _status_code, _headers) {
-            if (error) {
-                console.error('Vimeo set privacy settings error:', error);
-                reject(error);
+        function attempt(retriesLeft) {
+            try {
+                vimeoClient.request({
+                    method: 'PATCH',
+                    path: `/videos/${videoId}`,
+                    query: {
+                        password: password,
+                        privacy: {
+                            view: 'password',
+                        },
+                    },
+                }, function (error, body, _status_code, _headers) {
+                    if (error) {
+                        console.log('Vimeo set privacy settings error:', error);
+                        if (retriesLeft > 0) {
+                            console.log(`Retrying... ${retriesLeft} retries left.`);
+                            setTimeout(() => attempt(retriesLeft - 1), 15000);
+                        }
+                        else {
+                            reject(error);
+                        }
+                    }
+                    else {
+                        resolve(body);
+                    }
+                });
             }
-            else {
-                resolve(body);
+            catch (error) {
+                setTimeout(() => attempt(retriesLeft - 1), 15000);
             }
-        });
+        }
+        attempt(10);
     });
 }
 // Function to cut and compress the video using fluent-ffmpeg

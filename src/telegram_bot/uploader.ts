@@ -252,27 +252,42 @@ async function deleteLocalFile(filePath:string, chatId:number) {
 // Function to set privacy settings for the video on Vimeo
 async function setPrivacySettings(videoId:string, password?:string) {
 
-    // Skip blank passwords and instead use the vimeo default
-    if (password === undefined || password == "") return;
+    if (password === undefined || password == "") {
+        return Promise.resolve("Password is undefined or blank, skipping update.");
+    }
 
     return new Promise((resolve, reject) => {
-        vimeoClient.request({
-            method: 'PATCH',
-            path: `/videos/${videoId}`,
-            query: {
-                password: password,
-                privacy: {
-                    view: 'password',
-                },
-            },
-        }, function (error, body, _status_code, _headers) {
-            if (error) {
-                console.error('Vimeo set privacy settings error:', error);
-                reject(error);
-            } else {
-                resolve(body);
+        function attempt(retriesLeft:number) {
+            try {
+                vimeoClient.request({
+                    method: 'PATCH',
+                    path: `/videos/${videoId}`,
+                    query: {
+                        password: password,
+                        privacy: {
+                            view: 'password',
+                        },
+                    },
+                }, function (error, body, _status_code, _headers) {
+                    if (error) {
+                        console.log('Vimeo set privacy settings error:', error);
+                        if (retriesLeft > 0) {
+                            console.log(`Retrying... ${retriesLeft} retries left.`);
+                            setTimeout(() => attempt(retriesLeft - 1), 15000);
+                        } else {
+                            reject(error);
+                        }
+                    } else {
+                        resolve(body);
+                    }
+                });
+
+            } catch (error) {
+                setTimeout(() => attempt(retriesLeft - 1), 15000);
             }
-        });
+        }
+
+        attempt(10);
     });
 }
 

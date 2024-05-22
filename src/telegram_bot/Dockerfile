@@ -13,8 +13,14 @@ RUN apt-get -y upgrade
 RUN apt-get -y update
 RUN apt-get install -y ffmpeg
 
+# Auto subtitling stuff
+RUN apt-get install pip3
+RUN apt-get install python3
+RUN pip install git+https://github.com/m1guelpf/auto-subtitle.git --break-system-packages --no-input
+
 # Install NPM and Typescript
 COPY package*.json ./
+COPY ./telegram-bot-api-data /var/lib/telegram-bot-api
 RUN npm install typescript -g
 RUN npm install
 
