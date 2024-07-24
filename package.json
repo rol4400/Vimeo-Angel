@@ -10,6 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start-dev-server": "tsx --experimental-wasm-modules -r dotenv/config src/telegram_bot/bot.ts",
     "start-prod-server": "node ./dist/bot.js",
+    
     "start-filemon": "electron src/folder_monitor/main.js",
     "test-scene-analysis": "tsc --experimental-wasm-modules -r dotenv/config src/telegram_bot/scene-analysis.ts",
     "build:css": "tailwindcss build src/folder_monitor/styles.css -o src/folder_monitor/compiled-styles.css",
@@ -44,6 +45,7 @@
     "is-port-taken": "^0.0.3",
     "node-schedule": "^2.1.1",
     "path": "^0.12.7",
+    "puppeteer": "^22.9.0",
     "querystring": "^0.2.1",
     "simple-thumbnail": "^1.6.5",
     "tailwindcss": "^3.3.5",
